@@ -1,0 +1,37 @@
+# --- Environment files ---
+.env
+.env.local
+
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# --- IDE files ---
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Ngrok ---
+ngrok.yml
+
+# --- Node / NPM (if used later) ---
+node_modules/
+package-lock.json
+
+# --- Application-specific ---
+*.h2.db
+*.mv.db
