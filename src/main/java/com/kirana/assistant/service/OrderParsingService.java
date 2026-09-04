@@ -15,7 +15,7 @@ public class OrderParsingService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderParsingService.class);
 
-    private static final Pattern QUANTITY_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(kg|kilo|kg|gm|gram|litre|liter|l|pack|packet|bottle|piece|pcs|pieces)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUANTITY_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(kg|kilo|gm|gram|litre|liter|l|pack|packet|bottle|piece|pcs|pieces)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern NUMBER_PATTERN = Pattern.compile("\\b(\\d+)\\b");
 
     /**
@@ -64,9 +64,9 @@ public class OrderParsingService {
             }
         }
 
-        String name = line.replaceAll("(?i)\\d+(\\.\\d+)?\\s*(kg|kilo|kg|gm|gram|litre|liter|l|pack|packet|bottle|piece|pcs|pieces)\\b", "")
+        String name = line.replaceAll("(?i)\\d+(\\.\\d+)?\\s*(kg|kilo|gm|gram|litre|liter|l|pack|packet|bottle|piece|pcs|pieces)\\b", "")
                 .replaceAll("\\d+", "")
-                .replaceAll("[^a-zA-Z\\s]|^\\s+|\\s+$", "")
+                .replaceAll("[^\\p{L}\\s]|^\\s+|\\s+$", "")
                 .trim();
 
         if (name.isEmpty()) {

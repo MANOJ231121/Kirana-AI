@@ -145,6 +145,7 @@ public class AiOrderAgentService {
         String lower = transcript.toLowerCase();
 
         boolean likelyItemChange = lower.matches(".*\\b(?:add|add karo|lagao|daalo|chahiye|chahi|do|dedo|kharid|mangwan|order|remove|hatao|hatana|utao|quantity|kitna|aur|bhi|ban|maaf|cancel|theek|confirm|pickup|time|shaam|subah|kal|aaj)\\b.*")
+                || lower.matches(".*(?:आटा|दूध|दाल|चीनी|सामान|लिस्ट|जोड़ो|हटाओ|भेजो|चाहिए|किलो|ग्राम|लीटर|पैकेट|व्हाट्सएप).*")
                 || orderParsingService.parseList(transcript).size() > 0;
 
         if (!likelyItemChange) {
@@ -283,7 +284,8 @@ public class AiOrderAgentService {
     private boolean isWhatsAppReference(String transcript) {
         String lower = transcript.toLowerCase();
         return lower.contains("whatsapp") || lower.contains("whats app")
-                || lower.contains("list") || lower.contains("was ap") || lower.contains("wasapp");
+                || lower.contains("list") || lower.contains("was ap") || lower.contains("wasapp")
+                || lower.contains("व्हाट्सएप") || lower.contains("व्हाट्सऐप") || lower.contains("लिस्ट");
     }
 
     /**

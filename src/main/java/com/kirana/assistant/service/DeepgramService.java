@@ -15,8 +15,10 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 @Service
@@ -26,7 +28,7 @@ public class DeepgramService {
 
     private static final String DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen";
 
-    @Value("${DEEPGRAM_API_KEY}")
+    @Value("${DEEPGRAM_API_KEY:}")
     private String deepgramApiKey;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -41,6 +43,7 @@ public class DeepgramService {
         WebSocket webSocket;
         Consumer<String> onFinal;
         StringBuilder interim = new StringBuilder();
+        Queue<ByteBuffer> pendingAudio = new ConcurrentLinkedQueue<>();
     }
 
     /**
@@ -51,13 +54,16 @@ public class DeepgramService {
         WsSession session = sessions.computeIfAbsent(callSid, k -> createSession(k, onFinal));
         session.onFinal = onFinal;
 
+        byte[] audioBytes = Base64.getDecoder().decode(base64Chunk);
+        ByteBuffer buffer = ByteBuffer.wrap(audioBytes);
+
         if (session.webSocket == null) {
-            log.warn("WebSocket not ready for call {}, dropping chunk", callSid);
+            log.debug("WebSocket connecting for call {}, queuing audio chunk", callSid);
+            session.pendingAudio.add(buffer);
             return;
         }
 
-        byte[] audioBytes = Base64.getDecoder().decode(base64Chunk);
-        session.webSocket.sendBinary(ByteBuffer.wrap(audioBytes), true);
+        session.webSocket.sendBinary(buffer, true);
     }
 
     private WsSession createSession(String callSid, Consumer<String> onFinal) {
@@ -115,7 +121,14 @@ public class DeepgramService {
         httpClient.newWebSocketBuilder()
                 .header("Authorization", "Token " + deepgramApiKey)
                 .buildAsync(URI.create(url), listener)
-                .thenAccept(ws -> session.webSocket = ws)
+                .thenAccept(ws -> {
+                    session.webSocket = ws;
+                    // Drain any queued audio chunks
+                    ByteBuffer pending;
+                    while ((pending = session.pendingAudio.poll()) != null) {
+                        ws.sendBinary(pending, true);
+                    }
+                })
                 .exceptionally(e -> {
                     log.error("Failed to connect to Deepgram for call {}", callSid, e);
                     return null;

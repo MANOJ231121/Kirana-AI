@@ -4,7 +4,7 @@
 
 . .\load-env.ps1
 
-$required = @('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','RIME_API_KEY','DEEPGRAM_API_KEY','GROQ_API_KEY','PUBLIC_BASE_URL')
+$required = @('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','RIME_API_KEY','GROQ_API_KEY','PUBLIC_BASE_URL')
 $missing = $required | Where-Object { -not (Get-Item -Path "env:$($_)" -ErrorAction SilentlyContinue) }
 if ($missing) {
     Write-Host "Missing environment variables: $($missing -join ', ')" -ForegroundColor Red

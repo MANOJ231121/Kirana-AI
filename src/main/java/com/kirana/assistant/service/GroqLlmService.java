@@ -21,10 +21,11 @@ public class GroqLlmService {
 
     private static final Logger log = LoggerFactory.getLogger(GroqLlmService.class);
 
-    private static final String GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+    private static final String GROQ_BASE_URL = "https://api.groq.com";
+    private static final String GROQ_PATH = "/openai/v1/chat/completions";
     private static final String MODEL = "llama-3.3-70b-versatile";
 
-    @Value("${GROQ_API_KEY}")
+    @Value("${GROQ_API_KEY:}")
     private String groqApiKey;
 
     private final WebClient webClient;
@@ -32,7 +33,7 @@ public class GroqLlmService {
 
     public GroqLlmService(ObjectMapper objectMapper) {
         this.webClient = WebClient.builder()
-                .baseUrl(GROQ_ENDPOINT)
+                .baseUrl(GROQ_BASE_URL)
                 .build();
         this.objectMapper = objectMapper;
     }
@@ -60,7 +61,7 @@ public class GroqLlmService {
 
         try {
             String response = webClient.post()
-                    .uri(GROQ_ENDPOINT)
+                    .uri(GROQ_PATH)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + groqApiKey)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .bodyValue(payload.toString())
@@ -115,7 +116,7 @@ public class GroqLlmService {
             payload.set("response_format", fmt);
 
             String response = webClient.post()
-                    .uri(GROQ_ENDPOINT)
+                    .uri(GROQ_PATH)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + groqApiKey)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .bodyValue(payload.toString())

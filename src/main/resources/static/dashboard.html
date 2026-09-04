@@ -285,6 +285,7 @@
                             <p><strong>Customer:</strong> ${order.customerPhoneNumber || 'Unknown'}</p>
                             <p><strong>Pickup:</strong> ${order.pickupTime || 'Not set'}</p>
                             <p><strong>Placed:</strong> ${new Date(order.createdAt).toLocaleString()}</p>
+                            <p><strong>Total Amount:</strong> ₹${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</p>
                         </div>
                         <ul class="items-list">
                             ${order.items.map(item => `
@@ -296,7 +297,7 @@
                         </ul>
                     </div>
                     <div class="order-footer">
-                        <span>Items: ${order.items.length}</span>
+                        <span>Items: ${order.items.length} (₹${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'})</span>
                         <span>Updated: ${new Date(order.updatedAt).toLocaleTimeString()}</span>
                     </div>
                 </div>

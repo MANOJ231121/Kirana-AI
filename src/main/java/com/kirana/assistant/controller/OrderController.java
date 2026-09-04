@@ -2,6 +2,7 @@ package com.kirana.assistant.controller;
 
 import com.kirana.assistant.dto.OrderResponse;
 import com.kirana.assistant.model.Order;
+import com.kirana.assistant.repository.InventoryItemRepository;
 import com.kirana.assistant.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,9 @@ public class OrderController {
     @Autowired
     private OrderRepository orderRepository;
 
+    @Autowired
+    private InventoryItemRepository inventoryItemRepository;
+
     /**
      * Get all orders (for the shopkeeper dashboard).
      */
@@ -35,7 +39,7 @@ public class OrderController {
     public ResponseEntity<List<OrderResponse>> getAllOrders() {
         List<OrderResponse> orders = orderRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
-                .map(OrderResponse::fromOrder)
+                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(orders);
     }
@@ -46,7 +50,7 @@ public class OrderController {
     @GetMapping("/orders/{orderId}")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable String orderId) {
         return orderRepository.findById(orderId)
-                .map(OrderResponse::fromOrder)
+                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -58,7 +62,7 @@ public class OrderController {
     public ResponseEntity<List<OrderResponse>> getOrdersByStatus(@PathVariable String status) {
         List<OrderResponse> orders = orderRepository.findByStatusOrderByCreatedAtDesc(status)
                 .stream()
-                .map(OrderResponse::fromOrder)
+                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(orders);
     }
@@ -79,7 +83,7 @@ public class OrderController {
                     order.setStatus(newStatus);
                     order.setUpdatedAt(LocalDateTime.now());
                     orderRepository.save(order);
-                    return ResponseEntity.ok(OrderResponse.fromOrder(order));
+                    return ResponseEntity.ok(OrderResponse.fromOrder(order, inventoryItemRepository));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

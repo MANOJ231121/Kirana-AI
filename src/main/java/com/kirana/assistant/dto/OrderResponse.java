@@ -6,6 +6,9 @@ import com.kirana.assistant.model.OrderItem;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.kirana.assistant.model.InventoryItem;
+import com.kirana.assistant.repository.InventoryItemRepository;
+
 public class OrderResponse {
 
     private String id;
@@ -22,6 +25,10 @@ public class OrderResponse {
     }
 
     public static OrderResponse fromOrder(Order order) {
+        return fromOrder(order, null);
+    }
+
+    public static OrderResponse fromOrder(Order order, InventoryItemRepository inventoryRepo) {
         OrderResponse response = new OrderResponse();
         response.setId(order.getId());
         response.setCustomerId(order.getCustomerId());
@@ -31,6 +38,18 @@ public class OrderResponse {
         response.setPickupTime(order.getPickupTime());
         response.setCreatedAt(order.getCreatedAt());
         response.setUpdatedAt(order.getUpdatedAt());
+
+        if (inventoryRepo != null && order.getItems() != null) {
+            double total = 0.0;
+            for (OrderItem item : order.getItems()) {
+                InventoryItem inv = inventoryRepo.findByNameIgnoreCase(item.getName());
+                if (inv != null) {
+                    total += inv.getPrice() * item.getQuantity();
+                }
+            }
+            response.setTotalPrice(Math.round(total * 100.0) / 100.0);
+        }
+
         return response;
     }
 

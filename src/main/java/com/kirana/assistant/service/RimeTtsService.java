@@ -18,9 +18,10 @@ public class RimeTtsService {
 
     private static final Logger log = LoggerFactory.getLogger(RimeTtsService.class);
 
-    private static final String RIME_ENDPOINT = "https://users.rime.ai/v1/rime-tts";
+    private static final String RIME_BASE_URL = "https://users.rime.ai";
+    private static final String RIME_PATH = "/v1/rime-tts";
 
-    @Value("${RIME_API_KEY}")
+    @Value("${RIME_API_KEY:}")
     private String rimeApiKey;
 
     @Value("${RIME_SPEAKER:nadi}")
@@ -30,7 +31,7 @@ public class RimeTtsService {
 
     public RimeTtsService() {
         this.webClient = WebClient.builder()
-                .baseUrl(RIME_ENDPOINT)
+                .baseUrl(RIME_BASE_URL)
                 .build();
     }
 
@@ -51,7 +52,7 @@ public class RimeTtsService {
 
         try {
             byte[] audioData = webClient.post()
-                    .uri(RIME_ENDPOINT)
+                    .uri(RIME_PATH)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + rimeApiKey)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .header(HttpHeaders.ACCEPT, "audio/PCMU")

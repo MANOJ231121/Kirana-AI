@@ -26,7 +26,7 @@ public class MediaStreamsHandler extends TextWebSocketHandler {
     private static final Map<String, SessionContext> activeStreams = new ConcurrentHashMap<>();
 
     @Autowired
-    private DeepgramService deepgramService;
+    private GroqWhisperService groqWhisperService;
 
     @Autowired
     private AiOrderAgentService aiOrderAgentService;
@@ -115,8 +115,8 @@ public class MediaStreamsHandler extends TextWebSocketHandler {
             return;
         }
 
-        // Send audio chunk to Deepgram for streaming STT
-        deepgramService.streamAudioChunk(context.callSid, chunk, finalTranscript ->
+        // Send audio chunk to Groq Whisper for STT
+        groqWhisperService.processAudioChunk(context.callSid, chunk, finalTranscript ->
                 handleUserTranscript(context, finalTranscript));
     }
 
@@ -127,7 +127,7 @@ public class MediaStreamsHandler extends TextWebSocketHandler {
         log.info("Media Stream stopped: {}", streamSid);
         SessionContext context = activeStreams.remove(streamSid);
         if (context != null) {
-            deepgramService.closeStream(context.callSid);
+            groqWhisperService.closeSession(context.callSid);
             callSessionRepository.findByCallSid(context.callSid)
                     .ifPresent(cs -> {
                         cs.setEndTime(java.time.LocalDateTime.now());
