@@ -21,15 +21,22 @@ public class InventoryItem {
 
     private String alternatives;
 
+    private String imageUrl;
+
     public InventoryItem() {
     }
 
     public InventoryItem(String name, boolean available, double price, String category, String alternatives) {
+        this(name, available, price, category, alternatives, null);
+    }
+
+    public InventoryItem(String name, boolean available, double price, String category, String alternatives, String imageUrl) {
         this.name = name;
         this.available = available;
         this.price = price;
         this.category = category;
         this.alternatives = alternatives;
+        this.imageUrl = imageUrl;
     }
 
     public String getId() {
@@ -78,5 +85,13 @@ public class InventoryItem {
 
     public void setAlternatives(String alternatives) {
         this.alternatives = alternatives;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 }

@@ -1,6 +1,7 @@
 # --- Environment files ---
 .env
 .env.local
+frontend/.env
 
 # --- Java / Maven ---
 target/
@@ -28,9 +29,12 @@ logs/
 # --- Ngrok ---
 ngrok.yml
 
-# --- Node / NPM (if used later) ---
+# --- Node / NPM ---
 node_modules/
+frontend/node_modules/
+frontend/dist/
 package-lock.json
+frontend/package-lock.json
 
 # --- Application-specific ---
 *.h2.db

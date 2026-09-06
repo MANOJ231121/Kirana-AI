@@ -1,0 +1,101 @@
+package com.kirana.assistant.service.stt;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
+
+/**
+ * Groq Whisper Speech-to-Text service implementation.
+ * Transcribes recorded microphone audio using Groq's whisper-large-v3-turbo model.
+ */
+@Service
+public class GroqSpeechToTextService implements SpeechToTextService {
+
+    private static final Logger log = LoggerFactory.getLogger(GroqSpeechToTextService.class);
+    private static final String GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+
+    @Value("${GROQ_API_KEY:}")
+    private String apiKey;
+
+    @Value("${GROQ_WHISPER_MODEL:whisper-large-v3-turbo}")
+    private String whisperModel;
+
+    private final WebClient webClient;
+    private final ObjectMapper objectMapper;
+
+    public GroqSpeechToTextService(ObjectMapper objectMapper) {
+        this.webClient = WebClient.builder().build();
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public String transcribe(byte[] audio, String contentType) throws Exception {
+        if (!isAvailable()) {
+            throw new IllegalStateException("GROQ_API_KEY is not configured");
+        }
+        if (audio == null || audio.length == 0) {
+            throw new IllegalArgumentException("Audio payload is empty");
+        }
+
+        String extension = "webm";
+        if (contentType != null) {
+            if (contentType.contains("wav")) extension = "wav";
+            else if (contentType.contains("mp3")) extension = "mp3";
+            else if (contentType.contains("ogg")) extension = "ogg";
+            else if (contentType.contains("m4a")) extension = "m4a";
+        }
+        final String fileName = "speech." + extension;
+        final String mediaType = (contentType != null && !contentType.isBlank()) ? contentType : "audio/webm";
+
+        MultipartBodyBuilder builder = new MultipartBodyBuilder();
+        ByteArrayResource audioResource = new ByteArrayResource(audio) {
+            @Override
+            public String getFilename() {
+                return fileName;
+            }
+        };
+
+        builder.part("file", audioResource, MediaType.parseMediaType(mediaType));
+        builder.part("model", whisperModel);
+        builder.part("language", "hi");
+        builder.part("response_format", "json");
+
+        log.info("Sending {} bytes to Groq Whisper STT (model: {})", audio.length, whisperModel);
+
+        String response = webClient.post()
+                .uri(GROQ_AUDIO_URL)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(builder.build()))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        if (response != null) {
+            JsonNode root = objectMapper.readTree(response);
+            String transcript = root.path("text").asText("").trim();
+            log.info("Groq Whisper transcript: {}", transcript);
+            return transcript;
+        }
+        return "";
+    }
+
+    @Override
+    public String providerName() {
+        return "groq-whisper";
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return apiKey != null && !apiKey.isBlank();
+    }
+}

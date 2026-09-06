@@ -44,28 +44,46 @@ public class DataSeeder {
         if (inventoryItemRepository.count() > 0) {
             return;
         }
-        log.info("Seeding sample inventory...");
+        log.info("Seeding sample inventory with product image URLs...");
 
-        inventoryItemRepository.save(new InventoryItem("Atta", true, 55.0, "Grains", "Maida, Besan"));
-        inventoryItemRepository.save(new InventoryItem("Rice", true, 70.0, "Grains", "Poha, Daliya"));
-        inventoryItemRepository.save(new InventoryItem("Dal", true, 95.0, "Grains", "Chana, Rajma"));
-        inventoryItemRepository.save(new InventoryItem("Milk", true, 60.0, "Dairy", "Curd, Buttermilk"));
-        inventoryItemRepository.save(new InventoryItem("Ghee", true, 620.0, "Dairy", "Butter, Oil"));
-        inventoryItemRepository.save(new InventoryItem("Sugar", true, 45.0, "Staples", "Jaggery, Honey"));
-        inventoryItemRepository.save(new InventoryItem("Salt", true, 20.0, "Staples", null));
-        inventoryItemRepository.save(new InventoryItem("Tea", true, 180.0, "Beverages", "Coffee"));
-        inventoryItemRepository.save(new InventoryItem("Maggi", true, 14.0, "Snacks", "Top Ramen, Yippee"));
-        inventoryItemRepository.save(new InventoryItem("Biscuit", true, 30.0, "Snacks", "Parle-G, Marie"));
-        inventoryItemRepository.save(new InventoryItem("Eggs", true, 6.5, "Dairy", null));
-        inventoryItemRepository.save(new InventoryItem("Bread", true, 32.0, "Bakery", "Pav, Bun"));
-        inventoryItemRepository.save(new InventoryItem("Oil", true, 130.0, "Staples", "Ghee, Butter"));
-        inventoryItemRepository.save(new InventoryItem("Onion", true, 40.0, "Vegetables", null));
-        inventoryItemRepository.save(new InventoryItem("Potato", true, 25.0, "Vegetables", null));
-        inventoryItemRepository.save(new InventoryItem("Tomato", true, 35.0, "Vegetables", null));
-        inventoryItemRepository.save(new InventoryItem("Shampoo", false, 99.0, "Personal Care", "Sabun"));
-        inventoryItemRepository.save(new InventoryItem("Detergent", true, 150.0, "Household", "Washing Powder"));
+        inventoryItemRepository.save(new InventoryItem("Atta", true, 55.0, "Grains", "Maida, Besan",
+                "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Rice", true, 70.0, "Grains", "Poha, Daliya",
+                "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Dal", true, 95.0, "Grains", "Chana, Rajma",
+                "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Milk", true, 60.0, "Dairy", "Curd, Buttermilk",
+                "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Ghee", true, 620.0, "Dairy", "Butter, Oil",
+                "https://images.unsplash.com/photo-1631451095765-2c91616fc9e6?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Sugar", true, 45.0, "Staples", "Jaggery, Honey",
+                "https://images.unsplash.com/photo-1622484210800-8851b576f9d2?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Salt", true, 20.0, "Staples", null,
+                "https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Tea", true, 180.0, "Beverages", "Coffee",
+                "https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Maggi", true, 14.0, "Snacks", "Top Ramen, Yippee",
+                "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Biscuit", true, 30.0, "Snacks", "Parle-G, Marie",
+                "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Eggs", true, 6.5, "Dairy", null,
+                "https://images.unsplash.com/photo-1506976785307-8732e854ad03?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Bread", true, 32.0, "Bakery", "Pav, Bun",
+                "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Oil", true, 130.0, "Staples", "Ghee, Butter",
+                "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Onion", true, 40.0, "Vegetables", null,
+                "https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Potato", true, 25.0, "Vegetables", null,
+                "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Tomato", true, 35.0, "Vegetables", null,
+                "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Shampoo", false, 99.0, "Personal Care", "Sabun",
+                "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=400&auto=format&fit=crop&q=80"));
+        inventoryItemRepository.save(new InventoryItem("Detergent", true, 150.0, "Household", "Washing Powder",
+                "https://images.unsplash.com/photo-1585842378054-ee2e52f94ba2?w=400&auto=format&fit=crop&q=80"));
 
-        log.info("Seeded {} inventory items", inventoryItemRepository.count());
+        log.info("Seeded {} inventory items with images", inventoryItemRepository.count());
     }
 
     private void seedDemoCustomerWithWhatsApp() {

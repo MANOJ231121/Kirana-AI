@@ -1,10 +1,10 @@
 package com.kirana.assistant;
 
 import com.kirana.assistant.service.AiOrderAgentService;
-import com.kirana.assistant.service.DeepgramService;
 import com.kirana.assistant.service.GroqLlmService;
+import com.kirana.assistant.service.GroqWhisperService;
+import com.kirana.assistant.service.OrderService;
 import com.kirana.assistant.service.RimeTtsService;
-import com.kirana.assistant.websocket.MediaStreamsHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,20 +33,20 @@ class KiranaAssistantApplicationContextTest {
     private RimeTtsService rimeTtsService;
 
     @Autowired
-    private DeepgramService deepgramService;
+    private GroqWhisperService groqWhisperService;
 
     @Autowired
     private AiOrderAgentService aiOrderAgentService;
 
     @Autowired
-    private MediaStreamsHandler mediaStreamsHandler;
+    private OrderService orderService;
 
     @Test
     void contextLoadsAndBeansPresent() {
         assertNotNull(groqLlmService);
         assertNotNull(rimeTtsService);
-        assertNotNull(deepgramService);
+        assertNotNull(groqWhisperService);
         assertNotNull(aiOrderAgentService);
-        assertNotNull(mediaStreamsHandler);
+        assertNotNull(orderService);
     }
 }

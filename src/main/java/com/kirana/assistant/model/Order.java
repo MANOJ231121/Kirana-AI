@@ -7,20 +7,35 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * MongoDB order document.
+ *
+ * Spec fields: id, customerName, customerPhone (optional), items,
+ * pickupTime, status, createdAt, updatedAt.
+ *
+ * Legacy fields customerId / customerPhoneNumber are kept for the
+ * pre-existing phone-call agent code paths and are kept in sync
+ * with customerPhone where possible.
+ */
 @Document(collection = "orders")
 public class Order {
 
     @Id
     private String id;
 
+    private String customerName;
+
+    private String customerPhone;
+
+    /** Legacy: linked Customer document id (phone-call flows). */
     private String customerId;
 
+    /** Legacy alias of {@link #customerPhone} (phone-call flows). */
     private String customerPhoneNumber;
 
-    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
     private List<OrderItem> items = new ArrayList<>();
 
-    private String status;
+    private OrderStatus status = OrderStatus.PENDING;
 
     private String pickupTime;
 
@@ -28,18 +43,10 @@ public class Order {
 
     private LocalDateTime updatedAt;
 
-    public enum OrderStatus {
-        CREATED,
-        PREPARING,
-        CONFIRMED,
-        COMPLETED,
-        CANCELLED
-    }
-
     public Order() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
-        this.status = OrderStatus.CREATED.name();
+        this.status = OrderStatus.PENDING;
     }
 
     public String getId() {
@@ -48,6 +55,22 @@ public class Order {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public String getCustomerPhone() {
+        return customerPhone;
+    }
+
+    public void setCustomerPhone(String customerPhone) {
+        this.customerPhone = customerPhone;
     }
 
     public String getCustomerId() {
@@ -59,11 +82,18 @@ public class Order {
     }
 
     public String getCustomerPhoneNumber() {
-        return customerPhoneNumber;
+        // Prefer the canonical field, fall back to legacy.
+        if (customerPhoneNumber != null) {
+            return customerPhoneNumber;
+        }
+        return customerPhone;
     }
 
     public void setCustomerPhoneNumber(String customerPhoneNumber) {
         this.customerPhoneNumber = customerPhoneNumber;
+        if (this.customerPhone == null) {
+            this.customerPhone = customerPhoneNumber;
+        }
     }
 
     public List<OrderItem> getItems() {
@@ -71,15 +101,30 @@ public class Order {
     }
 
     public void setItems(List<OrderItem> items) {
-        this.items = items;
+        this.items = items != null ? items : new ArrayList<>();
     }
 
-    public String getStatus() {
+    public OrderStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    /** String-based setter for legacy callers (e.g. dashboard sends "ACCEPTED"). */
+    public void setStatus(String status) {
+        if (status == null) {
+            return;
+        }
+        String normalized = status.trim().toUpperCase();
+        // Backwards compatibility with the old phone-call lifecycle.
+        if ("CREATED".equals(normalized)) {
+            normalized = "PENDING";
+        } else if ("CONFIRMED".equals(normalized)) {
+            normalized = "ACCEPTED";
+        }
+        this.status = OrderStatus.valueOf(normalized);
     }
 
     public String getPickupTime() {
@@ -104,5 +149,13 @@ public class Order {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    /** Effective phone for notifications: canonical first, then legacy. */
+    public String effectivePhone() {
+        if (customerPhone != null && !customerPhone.isBlank()) {
+            return customerPhone;
+        }
+        return customerPhoneNumber;
     }
 }

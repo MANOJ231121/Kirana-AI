@@ -8,8 +8,6 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import reactor.core.publisher.Mono;
-
 import java.util.Base64;
 import java.util.Map;
 
@@ -35,19 +33,26 @@ public class RimeTtsService {
                 .build();
     }
 
+    public boolean isAvailable() {
+        return rimeApiKey != null && !rimeApiKey.isBlank();
+    }
+
     /**
-     * Generate speech audio from text using Rime TTS.
-     * Returns raw audio bytes in G.711 mu-law format (8kHz) for telephony compatibility.
+     * Generate speech audio from text using Rime TTS in MP3 format for web/browser playback.
      */
-    public byte[] synthesizeSpeech(String text) {
-        log.info("Synthesizing speech with Rime. Speaker: {}, Text length: {}", rimeSpeaker, text.length());
+    public byte[] synthesizeSpeechMp3(String text) {
+        log.info("Synthesizing speech with Rime TTS. Speaker: {}, Text: {}", rimeSpeaker, text);
+
+        if (!isAvailable()) {
+            log.warn("RIME_API_KEY is not configured! Cannot synthesize speech with Rime.");
+            return new byte[0];
+        }
 
         Map<String, Object> payload = Map.of(
                 "text", text,
+                "speaker", rimeSpeaker != null && !rimeSpeaker.isBlank() ? rimeSpeaker : "nadi",
                 "modelId", "coda",
-                "speaker", rimeSpeaker,
-                "lang", "hi",
-                "samplingRate", 8000
+                "audioFormat", "mp3"
         );
 
         try {
@@ -55,29 +60,74 @@ public class RimeTtsService {
                     .uri(RIME_PATH)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + rimeApiKey)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                    .header(HttpHeaders.ACCEPT, "audio/PCMU")
+                    .header(HttpHeaders.ACCEPT, "audio/mp3")
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(byte[].class)
                     .block();
 
             if (audioData == null || audioData.length == 0) {
-                log.error("Rime returned empty audio");
-                throw new RuntimeException("Rime returned empty audio");
+                log.error("Rime returned empty MP3 audio");
+                return new byte[0];
             }
 
-            log.info("Rime generated {} bytes of audio", audioData.length);
+            log.info("Rime generated {} bytes of MP3 audio for speaker {}", audioData.length, rimeSpeaker);
             return audioData;
         } catch (Exception e) {
-            log.error("Rime TTS request failed", e);
-            throw new RuntimeException("Rime TTS failed", e);
+            log.error("Rime TTS MP3 synthesis failed: {}", e.getMessage());
+            return new byte[0];
         }
     }
 
-    /**
-     * Convert to base64 for sending over WebSocket to Twilio.
-     */
+    public byte[] synthesizeSpeech(String text) {
+        log.info("Synthesizing telephony speech with Rime. Speaker: {}", rimeSpeaker);
+
+        if (!isAvailable()) {
+            log.warn("RIME_API_KEY is not set.");
+            return new byte[0];
+        }
+
+        Map<String, Object> payload = Map.of(
+                "text", text,
+                "speaker", rimeSpeaker != null && !rimeSpeaker.isBlank() ? rimeSpeaker : "nadi",
+                "modelId", "coda",
+                "audioFormat", "pcm"
+        );
+
+        try {
+            byte[] audioData = webClient.post()
+                    .uri(RIME_PATH)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + rimeApiKey)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .block();
+
+            if (audioData == null || audioData.length == 0) {
+                return new byte[0];
+            }
+
+            return audioData;
+        } catch (Exception e) {
+            log.error("Rime TTS request failed: {}", e.getMessage());
+            return new byte[0];
+        }
+    }
+
+    public String synthesizeSpeechBase64Mp3(String text) {
+        byte[] bytes = synthesizeSpeechMp3(text);
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        return Base64.getEncoder().encodeToString(bytes);
+    }
+
     public String synthesizeSpeechBase64(String text) {
-        return Base64.getEncoder().encodeToString(synthesizeSpeech(text));
+        byte[] bytes = synthesizeSpeech(text);
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        return Base64.getEncoder().encodeToString(bytes);
     }
 }

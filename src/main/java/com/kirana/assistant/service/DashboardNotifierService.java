@@ -22,17 +22,30 @@ public class DashboardNotifierService {
     @Autowired
     private ObjectMapper objectMapper;
 
+    public DashboardNotifierService() {
+    }
+
+    public DashboardNotifierService(SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper) {
+        this.messagingTemplate = messagingTemplate;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+    }
+
     /**
      * Sends an order update to the shopkeeper dashboard in real-time.
      */
     public void notifyOrderUpdate(Order order, String action) {
+        if (messagingTemplate == null) {
+            log.debug("No messaging template (test); skipping broadcast for {}", action);
+            return;
+        }
         try {
             Map<String, Object> payload = new HashMap<>();
             payload.put("type", "ORDER_UPDATE");
             payload.put("action", action);
             payload.put("orderId", order.getId());
-            payload.put("customerPhone", order.getCustomerPhoneNumber());
-            payload.put("status", order.getStatus());
+            payload.put("customerName", order.getCustomerName());
+            payload.put("customerPhone", order.effectivePhone());
+            payload.put("status", order.getStatus() != null ? order.getStatus().name() : null);
             payload.put("pickupTime", order.getPickupTime());
             payload.put("items", order.getItems());
             payload.put("timestamp", java.time.LocalDateTime.now().toString());
@@ -49,6 +62,9 @@ public class DashboardNotifierService {
      * Sends a call session update to the dashboard.
      */
     public void notifyCallUpdate(String message) {
+        if (messagingTemplate == null) {
+            return;
+        }
         try {
             Map<String, Object> payload = new HashMap<>();
             payload.put("type", "CALL_UPDATE");

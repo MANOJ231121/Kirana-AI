@@ -1,19 +1,19 @@
 package com.kirana.assistant.dto;
 
+import com.kirana.assistant.model.InventoryItem;
 import com.kirana.assistant.model.Order;
 import com.kirana.assistant.model.OrderItem;
+import com.kirana.assistant.repository.InventoryItemRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-import com.kirana.assistant.model.InventoryItem;
-import com.kirana.assistant.repository.InventoryItemRepository;
-
+/** Canonical order response for the React frontends. */
 public class OrderResponse {
 
     private String id;
-    private String customerId;
-    private String customerPhoneNumber;
+    private String customerName;
+    private String customerPhone;
     private List<OrderItem> items;
     private String status;
     private String pickupTime;
@@ -31,10 +31,15 @@ public class OrderResponse {
     public static OrderResponse fromOrder(Order order, InventoryItemRepository inventoryRepo) {
         OrderResponse response = new OrderResponse();
         response.setId(order.getId());
-        response.setCustomerId(order.getCustomerId());
-        response.setCustomerPhoneNumber(order.getCustomerPhoneNumber());
+        response.setCustomerName(order.getCustomerName());
+        // Backwards compat: older callers expect customerId / phoneNumber fields,
+        // but the spec-facing fields are customerName + customerPhone.
+        String phone = order.getCustomerPhone() != null
+                ? order.getCustomerPhone()
+                : order.getCustomerPhoneNumber();
+        response.setCustomerPhone(phone);
         response.setItems(order.getItems());
-        response.setStatus(order.getStatus());
+        response.setStatus(order.getStatus() != null ? order.getStatus().name() : null);
         response.setPickupTime(order.getPickupTime());
         response.setCreatedAt(order.getCreatedAt());
         response.setUpdatedAt(order.getUpdatedAt());
@@ -61,20 +66,20 @@ public class OrderResponse {
         this.id = id;
     }
 
-    public String getCustomerId() {
-        return customerId;
+    public String getCustomerName() {
+        return customerName;
     }
 
-    public void setCustomerId(String customerId) {
-        this.customerId = customerId;
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
     }
 
-    public String getCustomerPhoneNumber() {
-        return customerPhoneNumber;
+    public String getCustomerPhone() {
+        return customerPhone;
     }
 
-    public void setCustomerPhoneNumber(String customerPhoneNumber) {
-        this.customerPhoneNumber = customerPhoneNumber;
+    public void setCustomerPhone(String customerPhone) {
+        this.customerPhone = customerPhone;
     }
 
     public List<OrderItem> getItems() {

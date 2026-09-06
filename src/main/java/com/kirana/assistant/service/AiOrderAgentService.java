@@ -177,8 +177,69 @@ public class AiOrderAgentService {
                     "You are a strict JSON extractor. Only output the JSON object, no extra text.", actionPrompt);
             applyActionsFromJson(json, order, session);
         } catch (Exception e) {
-            log.warn("Failed to extract speech actions (continuing anyway): {}", e.getMessage());
+            log.warn("LLM action extraction failed, using rule-based fallback: {}", e.getMessage());
+            applyRuleBasedActions(transcript, order, session);
         }
+    }
+
+    /**
+     * Deterministic fallback when the LLM is unreachable (no key / offline).
+     * Merges newly spoken items and handles live quantity corrections such as
+     * "No no, I want 2 kg Atta instead" by overwriting the matched item's quantity.
+     */
+    private void applyRuleBasedActions(String transcript, Order order, CallSession session) {
+        List<OrderItem> parsed = orderParsingService.parseList(transcript);
+        if (parsed.isEmpty()) {
+            return;
+        }
+        String lower = transcript.toLowerCase();
+        boolean correction = lower.matches(".*\\b(instead|actually|change|sorry|rather|correction)\\b.*")
+                || lower.matches(".*\\b(no+\\s+no+|nahi|nahin|badal|usko|isko)\\b.*");
+
+        boolean changed = false;
+        for (OrderItem p : parsed) {
+            if (p.getName() == null || p.getName().isBlank() || p.getQuantity() <= 0) {
+                continue;
+            }
+            OrderItem existing = order.getItems().stream()
+                    .filter(i -> matchesItem(i.getName(), p.getName()))
+                    .findFirst().orElse(null);
+            if (existing != null && correction) {
+                existing.setQuantity(p.getQuantity());
+                if (p.getUnit() != null && !p.getUnit().isBlank()) {
+                    existing.setUnit(p.getUnit());
+                }
+                changed = true;
+                addOrderChange(session, "SET_QTY " + existing.getName() + " -> " + p.getQuantity());
+            } else if (existing != null) {
+                existing.setQuantity(existing.getQuantity() + p.getQuantity());
+                changed = true;
+                addOrderChange(session, "ADD " + p.getName() + " x" + p.getQuantity());
+            } else {
+                order.getItems().add(new OrderItem(capitalize(p.getName()), p.getQuantity(),
+                        p.getUnit() == null || p.getUnit().isBlank() ? "pc" : p.getUnit()));
+                changed = true;
+                addOrderChange(session, "ADD " + p.getName() + " x" + p.getQuantity());
+            }
+        }
+
+        if (changed) {
+            order.setUpdatedAt(java.time.LocalDateTime.now());
+            if (OrderStatus.PENDING.equals(order.getStatus()) && !order.getItems().isEmpty()) {
+                order.setStatus(OrderStatus.PREPARING);
+            }
+            orderRepository.save(order);
+            dashboardNotifierService.notifyOrderUpdate(order, "SPOKEN_UPDATE");
+        }
+    }
+
+    private boolean matchesItem(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        String x = a.trim().toLowerCase();
+        String y = b.trim().toLowerCase();
+        return x.equals(y) || x.contains(y) || y.contains(x);
     }
 
     private void applyActionsFromJson(String json, Order order, CallSession session) {
@@ -240,7 +301,7 @@ public class AiOrderAgentService {
                         }
                     }
                     case "CONFIRM" -> {
-                        order.setStatus(Order.OrderStatus.CONFIRMED.name());
+                        order.setStatus(OrderStatus.ACCEPTED);
                         changed = true;
                         addOrderChange(session, "ORDER_CONFIRMED");
                     }
@@ -255,9 +316,9 @@ public class AiOrderAgentService {
 
             if (changed) {
                 order.setUpdatedAt(java.time.LocalDateTime.now());
-                if (Order.OrderStatus.CREATED.name().equals(order.getStatus())
+                if (OrderStatus.PENDING.equals(order.getStatus())
                         && !order.getItems().isEmpty()) {
-                    order.setStatus(Order.OrderStatus.PREPARING.name());
+                    order.setStatus(OrderStatus.PREPARING);
                 }
                 orderRepository.save(order);
                 dashboardNotifierService.notifyOrderUpdate(order, "SPOKEN_UPDATE");
@@ -303,7 +364,7 @@ public class AiOrderAgentService {
             if (!parsedItems.isEmpty()) {
                 currentOrder.getItems().clear();
                 currentOrder.getItems().addAll(parsedItems);
-                currentOrder.setStatus(Order.OrderStatus.PREPARING.name());
+                currentOrder.setStatus(OrderStatus.PREPARING);
                 currentOrder.setUpdatedAt(java.time.LocalDateTime.now());
                 orderRepository.save(currentOrder);
 
@@ -368,8 +429,8 @@ public class AiOrderAgentService {
      */
     public Order getOrCreateActiveOrder(Customer customer) {
         return orderRepository.findFirstByCustomerIdOrderByCreatedAtDesc(customer.getId())
-                .filter(o -> !Order.OrderStatus.COMPLETED.name().equals(o.getStatus())
-                        && !Order.OrderStatus.CANCELLED.name().equals(o.getStatus()))
+                .filter(o -> !OrderStatus.COMPLETED.equals(o.getStatus())
+                        && !OrderStatus.CANCELLED.equals(o.getStatus()))
                 .orElseGet(() -> {
                     Order order = new Order();
                     order.setCustomerId(customer.getId());

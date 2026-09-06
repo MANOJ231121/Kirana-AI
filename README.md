@@ -1,218 +1,272 @@
-# Kirana Store AI Voice Assistant
+# Kirana AI — Voice-Based Kirana Store Ordering System
 
-A real phone-based Hinglish AI voice assistant for a local kirana store.
+Web-based AI assistant for a local Indian kirana store. Customers speak in the
+browser to build a grocery order; the shopkeeper sees it live on a dashboard.
 
-## Project Overview
+> No Twilio, no phone calls in this build. Microphone + AI run entirely
+> through the browser and the Spring Boot backend.
 
-This system allows customers to:
-1. Send grocery lists through WhatsApp
-2. Call the shopkeeper's phone number
-3. Talk naturally to an AI assistant in Hindi, English, or Hinglish
-4. Add/remove items and change quantities during the call
-5. Reference their WhatsApp grocery list during the call
-6. Specify pickup time and confirm the order
+## 1. Project description
 
-The **phone call itself is the user interface** - no website, app, or login needed. Orders are stored in MongoDB and appear **live on the shopkeeper dashboard** as they are placed.
+Two sides, one backend:
 
-## Architecture
+- **Customer** (`/customer`): store menu with prices, basket, mic button,
+  **always-on wake-word assistant (“Kirana…” / “Siri…”)**, AI Hinglish replies,
+  confirm → order ID + live status.
+- **Shopkeeper** (`/shopkeeper`): **login gate (Bearer token auth)**,
+  status tabs, order cards, one-click
+  `ACCEPT → PREPARING → READY → COMPLETED` (or `REJECT`/`CANCEL`), live
+  `🔔 New Order Received` toasts over WebSocket — no refresh needed.
+
+Legacy phone-call code (`/api/web-call`, `AiOrderAgentService`, static
+`dashboard.html`/`call.html`) is preserved untouched for reference.
+
+## 2. Architecture
 
 ```
-                 CUSTOMER
-                    │
-              Real Phone Call
-                    │
-                    ▼
-          ┌───────────────────┐
-          │    TELEPHONY      │
-          │      Twilio       │
-          └─────────┬─────────┘
-                    │   Media Streams (WebSocket, G.711 μ-law)
-                    ▼
-          ┌───────────────────┐
-          │ Speech-to-Text    │
-          │   Deepgram (nova) │  streaming Hinglish STT
-          └─────────┬─────────┘
-                    ▼
-          ┌───────────────────┐
-          │     AI AGENT      │
-          │   Groq (llama-3.3)│  order-aware
-          └───────┬─┬─────────┘
-                  │ │
-          ┌───────┘ └───────────┐
-          ▼                     ▼
-     WhatsApp list          MongoDB
-     (reference)       (orders, customers,
-     Inventory                sessions)
-          │
-          ▼
-          ┌──────────────┐
-          │   RIME API   │
-          │     TTS      │  MANDATORY, audio/PCMU
-          └──────┬───────┘
-                 │
-                 ▼
-          ┌──────────────┐
-          │  TELEPHONY   │
-          └──────┬───────┘
-                 ▼
-           CUSTOMER PHONE
-                 
- ┌─────────────────────────────────────┐
- │   SHOPKEEPER DASHBOARD (STOMP/WSS)  │
- │   /dashboard.html - live orders     │
- └─────────────────────────────────────┘
+                         CUSTOMER
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ React Web App │
+                    └───────┬───────┘
+                            │
+                       🎤 Microphone
+                            │
+                            ▼
+                    Speech-to-Text (Deepgram via backend, else Web Speech)
+                            │
+                            ▼
+                     LLM (Groq via backend, else mock)
+                            │
+                    Structured Order (intent + items, validated)
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │  Spring Boot  │─── MongoDB
+                    │    Backend    │─── WebSocket (/topic/orders, /topic/calls)
+                    └───────────────┘
+                                   │
+                                   ▼
+                         ┌──────────────────┐
+                         │ React Shopkeeper │
+                         │    Dashboard     │
+                         └──────────────────┘
 ```
 
-## Flow (How a Call Works)
+Request flow for a new order:
 
-1. **Customer dials** the Twilio number.
-2. **Twilio** POSTs to `/voice`, which returns TwiML that opens a **Media Stream** (WebSocket) to `/media-stream`.
-3. Customer audio (μ-law 8kHz base64) streams through the WebSocket to **Deepgram** for live Hinglish STT.
-4. The transcript is sent to **Groq** (`llama-3.3-70b-versatile`) via `AiOrderAgentService`, which manages the order state and references the customer's WhatsApp list.
-5. The AI's Hinglish text reply is synthesized by **Rime TTS** (`coda`, `lang=hi`, `audio/PCMU`) and streamed back to Twilio as audio.
-6. The resulting order is persisted to **MongoDB** and pushed to the **shopkeeper dashboard** in real time via STOMP WebSocket.
-
-## Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Telephony | Twilio (Media Streams) | Answers calls, real-time bidirectional audio |
-| Backend | Java + Spring Boot 3.2.5 | Server, AI orchestration, WebSocket |
-| STT | Deepgram (nova-3, language=hi) | Streaming speech-to-text |
-| LLM | Groq (llama-3.3-70b-versatile) | Understands requests, manages order state |
-| TTS | **Rime** (coda, nadi/taru) | AI voice responses (**mandatory**) |
-| Database | MongoDB | Customers, orders, inventory, call sessions |
-| Dashboard | HTML/JS + STOMP/SockJS | Live shopkeeper order view |
-
-## Setup Instructions
-
-### Prerequisites
-
-1. **Java 17+** and **Maven** installed
-2. **MongoDB** running locally (default `mongodb://localhost:27017`)
-3. **Twilio account** - https://www.twilio.com/try-twilio
-4. **ngrok** - https://ngrok.com/download (to expose localhost to Twilio)
-5. API keys:
-   - Twilio Account SID & Auth Token + phone number
-   - **Rime** API key (https://app.rime.ai/tokens)
-   - Deepgram API key (https://console.deepgram.com)
-   - Groq API key (https://console.groq.com/keys)
-
-### Step 1: Configure Environment Variables
-
-Copy `.env.example` to `.env` and fill in your API keys. These are read from the environment at runtime.
-
-On Windows (PowerShell):
-```powershell
-$env:TWILIO_ACCOUNT_SID="your_account_sid"
-$env:TWILIO_AUTH_TOKEN="your_auth_token"
-$env:TWILIO_PHONE_NUMBER="+14155552671"
-$env:RIME_API_KEY="your_rime_key"
-$env:RIME_SPEAKER="nadi"          # nadi (female) or taru (male)
-$env:DEEPGRAM_API_KEY="your_deepgram_key"
-$env:GROQ_API_KEY="your_groq_key"
-$env:MONGODB_URI="mongodb://localhost:27017/kirana_store"
-$env:SERVER_PORT="8080"
-$env:PUBLIC_BASE_URL="https://abc123.ngrok.io"
+```
+Customer React → POST /api/orders → Spring Boot → MongoDB → WS event → Shopkeeper React
+Shopkeeper → PATCH /api/orders/{id}/status → MongoDB → WS event → Customer sees status
 ```
 
-### Step 2: Run MongoDB
+## 3. Tech stack
 
-MongoDB must be running:
+| Layer    | Tech                                            |
+|----------|-------------------------------------------------|
+| Frontend | React 18, Vite 5, react-router, SockJS + STOMP  |
+| Backend  | Java 17+, Spring Boot 3.2.5, Web, Validation, WebSocket, Data MongoDB, WebFlux (provider calls) |
+| DB       | MongoDB 7 (docker-compose)                      |
+| STT      | `SpeechToTextService` → `DeepgramSpeechToTextService` / `MockSpeechToTextService` |
+| LLM      | `AIService` → `GroqAiService` / `MockAiService` |
+| TTS      | `TextToSpeechService` → `RimeTextToSpeechService` / `MockTextToSpeechService` |
+
+Keys never leave the backend. The browser only sends audio clips / text and
+receives transcripts, replies, and base64 audio.
+
+## 4. Folder structure
+
+```
+.
+├── frontend/                    # Vite React app (NEW — spec build)
+│   ├── src/
+│   │   ├── pages/               # CustomerPage, ShopkeeperPage, Home
+│   │   ├── components/          # (reserved)
+│   │   ├── services/            # api.js, audio.js
+│   │   ├── hooks/               # useSpeech.js
+│   │   ├── websocket/           # useOrdersSocket.js
+│   │   ├── App.jsx main.jsx styles.css
+│   ├── package.json vite.config.js index.html
+│   └── .env.example
+├── src/main/java/com/kirana/assistant/
+│   ├── controller/  # OrderController (spec API), ConversationController, WebCallController (legacy), HealthController
+│   ├── service/     # OrderService, ConversationService, DashboardNotifierService, AiOrderAgentService (legacy), Groq/Rime/Whisper/Parsing/DataSeeder
+│   ├── service/ai/  # AIService, GroqAiService, MockAiService, Intent, AiOrderParseResult
+│   ├── service/stt/ # SpeechToTextService, DeepgramSpeechToTextService, MockSpeechToTextService
+│   ├── service/tts/ # TextToSpeechService, RimeTextToSpeechService, MockTextToSpeechService
+│   ├── model/       # Order (spec fields), OrderItem, OrderStatus, Customer, …
+│   ├── dto/         # CreateOrderRequest, OrderItemRequest, UpdateOrderStatusRequest, OrderResponse, Conversation*
+│   ├── repository/  # OrderRepository, …
+│   ├── config/      # WebSocketConfig (/ws-dashboard), CorsConfig
+│   └── exception/   # GlobalExceptionHandler + {timestamp,status,message,path}
+├── src/main/resources/static/   # legacy dashboard.html / call.html (kept)
+├── " Kirana Frontend"/          # legacy static mock (kept, untouched)
+├── docker-compose.yml           # MongoDB
+├── .env.example  frontend/.env.example
+└── README.md
+```
+
+## 5. Prerequisites
+
+- Java 17+ (`java -version`), Maven (`mvn -version`)
+- Node 18+ (`node --version`), npm
+- MongoDB — easiest via Docker: `docker compose up -d`
+- Optional AI keys (app works without them via mocks): `DEEPGRAM_API_KEY`,
+  `GROQ_API_KEY` (or `LLM_API_KEY`), `RIME_API_KEY`
+
+## 6. Environment variables
+
+Backend (`.env`, see `.env.example`):
+
+```
+MONGODB_URI=mongodb://localhost:27017/kirana_store
+SERVER_PORT=8080
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+DEEPGRAM_API_KEY=
+GROQ_API_KEY=        # or LLM_API_KEY=
+RIME_API_KEY=
+RIME_SPEAKER=nadi
+SEED_DATA=true
+```
+
+Load into PowerShell: `. .\load-env.ps1`
+
+Frontend (`frontend/.env`, see `frontend/.env.example`):
+
+```
+VITE_API_URL=http://localhost:8080
+VITE_WS_URL=http://localhost:8080/ws-dashboard
+```
+
+## 7. MongoDB setup
+
 ```bash
-mongod --dbpath C:\data\db
+docker compose up -d
+docker ps   # kirana-mongo on localhost:27017
 ```
 
-### Step 3: Run the Application
+Or run a local `mongod` with dbpath of your choice.
+
+## 8. Backend setup
 
 ```bash
-mvn spring-boot:run
+mvn clean compile
+mvn test -Dtest='OrderServiceTest,ConversationServiceTest'
 ```
 
-Verify at `http://localhost:8080/health`.
-
-### Step 4: Expose with ngrok
+## 9. Frontend setup
 
 ```bash
-ngrok http 8080
-```
-Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`) and set it as `PUBLIC_BASE_URL`.
-
-### Step 5: Configure Twilio Webhook
-
-1. [Twilio Console](https://console.twilio.com) → **Phone Numbers** → **Your Number**
-2. Under **A CALL COMES IN**, select **Webhook**, POST, and enter:
-   `https://your-ngrok-url.ngrok.io/voice`
-3. Save.
-
-### Step 6: Test
-
-1. Open `http://localhost:8080/dashboard.html` to see the live shopkeeper dashboard.
-2. Call your Twilio number and speak in Hindi/Hinglish.
-3. Watch the order appear live on the dashboard.
-
-## Current Status
-
-- ✅ Twilio inbound calls answered via `/voice`
-- ✅ Real-time **Media Streams** WebSocket (`/media-stream`) for bidirectional audio
-- ✅ **Deepgram** streaming STT (Hinglish, `language=hi`)
-- ✅ **Groq** LLM order agent (`AiOrderAgentService`) with order/customer state
-- ✅ **Rime** mandatory TTS (PCMU) responses streamed back to the caller
-- ✅ **MongoDB** persistence (customers, orders, inventory, call sessions, WhatsApp messages)
-- ✅ **OrderParsingService** parses grocery list text into structured `OrderItem`s
-- ✅ **Shopkeeper dashboard** (`/dashboard.html`) with live WebSocket order updates
-- ✅ REST API (`/api/orders`) for the dashboard
-
-## Project Structure
-
-```
-src/main/java/com/kirana/assistant/
-├── KiranaAssistantApplication.java
-├── config/
-│   ├── WebSocketConfig.java              # STOMP broker for dashboard (/ws-dashboard)
-│   └── MediaStreamWebSocketConfig.java   # Twilio Media Streams endpoint (/media-stream)
-├── controller/
-│   ├── VoiceWebhookController.java       # POST /voice  (call entry)
-│   ├── OrderController.java              # GET/POST /api/orders
-│   └── HealthController.java             # GET /health
-├── dto/
-│   └── OrderResponse.java
-├── model/                                # MongoDB entities
-│   ├── Customer.java
-│   ├── Order.java / OrderItem.java
-│   ├── InventoryItem.java
-│   ├── WhatsAppMessage.java
-│   └── CallSession.java
-├── repository/                           # Spring Data Mongo repositories
-├── service/
-│   ├── TwilioService.java                # TwiML generation (Stream/Connect)
-│   ├── DeepgramService.java              # streaming STT
-│   ├── GroqLlmService.java               # Groq chat completions
-│   ├── RimeTtsService.java               # Rime TTS (PCMU) - mandatory
-│   ├── AiOrderAgentService.java          # order-aware conversational agent
-│   ├── OrderParsingService.java          # text -> OrderItem list
-│   └── DashboardNotifierService.java     # pushes updates to dashboard
-└── websocket/
-    └── MediaStreamsHandler.java          # handles Twilio stream events
+cd frontend
+npm install
+npm run dev
 ```
 
-## Security
+## 10. How to run
 
-- Never commit `.env` - it's in `.gitignore`.
-- API keys are read from environment variables, never hardcoded.
-- Logs do not print API keys.
+```bash
+docker compose up -d          # MongoDB
+mvn spring-boot:run           # backend :8080 (or . .\load-env.ps1 first on Windows)
+cd frontend; npm run dev      # frontend :5173
+```
 
-## Troubleshooting
+Open:
 
-### Dashboard never connects to WebSocket
-Ensure the app is running and open `dashboard.html` through the app (not file://). Check the connection badge turns green.
+```
+Frontend:   http://localhost:5173
+Customer:   http://localhost:5173/customer     # menu + wake-word assistant + basket
+Shopkeeper: http://localhost:5173/shopkeeper   # login, then live orders
+Backend:    http://localhost:8080
+Health:     http://localhost:8080/health
+MongoDB:    localhost:27017
+```
 
-### Call connects but no voice / no STT
-- Set `PUBLIC_BASE_URL` to the ngrok HTTPS URL **before** starting the app (it is used to build the `/media-stream` WebSocket URL).
-- Check `mvn spring-boot:run` logs for `Media Stream started`.
-- Verify `RIME_API_KEY`, `DEEPGRAM_API_KEY`, and `GROQ_API_KEY` are set.
+Default shopkeeper login: `shopkeeper / changeme` — set
+`SHOPKEEPER_USERNAME` / `SHOPKEEPER_PASSWORD` in `.env` immediately.
 
-### App won't start
-- MongoDB must be running.
-- Verify Java 17+ (`java -version`) and Maven (`mvn -version`).
-- Check for port conflicts (8080).
+Manual end-to-end check:
+
+```
+Customer creates order → MongoDB stores → Shopkeeper sees 🔔
+→ ACCEPTED → customer sees ACCEPTED → PREPARING → READY → COMPLETED
+```
+
+## 11. API endpoints
+
+| Method | Path | Body | Notes |
+|--------|------|------|-------|
+| POST | `/api/orders` | `{customerName, customerPhone?, items:[{name,quantity,unit}], pickupTime?}` | → 201, **public** |
+| GET | `/api/orders` | — | optional `?status=PENDING`, **🔒 shopkeeper** |
+| GET | `/api/orders?status=` | — | filter, **🔒 shopkeeper** |
+| GET | `/api/orders/{id}` | — | **public** (customer tracks own order), → 404 `{timestamp,status,message,path}` |
+| PATCH | `/api/orders/{id}/status` | `{status}` | enforced transition graph, **🔒 shopkeeper** |
+| DELETE | `/api/orders/{id}` | — | → 204, **🔒 shopkeeper** |
+| POST | `/api/auth/login` | `{username, password}` | → `{token, username, expiresAt}` (12h Bearer) |
+| POST | `/api/auth/logout` | — | revokes token |
+| GET | `/api/auth/me` | — | **🔒** returns `{username}` |
+| GET | `/api/inventory` | — | public menu `{id, name, price, category, available, unit}` |
+| POST | `/api/conversation/message` | `{transcript, currentItems}` | → `{intent, items, replyText, …}` |
+| POST | `/api/stt/transcribe` | multipart `audio` | Deepgram or mock |
+| POST | `/api/tts/synthesize` | `{text}` | → `{audioBase64, mimeType, provider}` |
+| GET | `/api/voice/status` | — | provider diagnostics |
+| GET | `/health` | — | liveness |
+
+Legacy aliases (kept): `POST /api/orders/{id}/status`,
+`GET /api/orders/status/{status}`, `/api/web-call/*`.
+
+Order statuses: `PENDING ACCEPTED PREPARING READY COMPLETED REJECTED CANCELLED`.
+Valid flow: `PENDING→ACCEPTED→PREPARING→READY→COMPLETED`,
+`PENDING→REJECTED`, cancel from `PENDING/ACCEPTED/PREPARING/READY`.
+`COMPLETED→PENDING` etc. return 400.
+
+## 12. WebSocket architecture
+
+- STOMP broker at `/ws-dashboard` (SockJS), topics `/topic/orders`, `/topic/calls`
+  (`WebSocketConfig`, `DashboardNotifierService`).
+- `OrderService` broadcasts `CREATED / STATUS_* / DELETED` on every mutation,
+  so the shopkeeper list refreshes live and the customer gets status toasts.
+- React `useOrdersSocket.js` subscribes with reconnect-friendly defaults; the
+  customer page additionally polls `GET /api/orders/{id}` every 5s as fallback.
+
+## 13. AI/voice architecture
+
+```
+Browser mic (MediaRecorder 8s clips, or push-to-talk 🎤)
+  → POST /api/stt/transcribe → Deepgram (nova-3, language=hi) or mock ""
+  → transcript → POST /api/conversation/message → Groq (json_object) or MockAiService
+  → validated {intent, items, pickupTime, needsClarification, …}
+  → React basket → POST /api/orders → MongoDB → WS → shopkeeper
+LLM reply text → POST /api/tts/synthesize → Rime MP3 or mock ""
+  → browser Audio play, fallback speechSynthesis (hi-IN)
+```
+
+**Always-on wake word** (`frontend/src/hooks/useWakeWord.js`, Chrome):
+toggle “Wake: ON” → passive Web Speech listener scans everything →
+“Kirana, 2 kilo atta” (same sentence) or “Kirana!” … “2 kilo atta”
+(next sentence) → command flows through the same pipeline above into
+the basket. Wake words: `kirana`, `siri` (`DEFAULT_WAKE_WORDS`).
+
+**Shopkeeper auth** (`ShopkeeperAuthService` + `TokenStore` +
+`ShopkeeperAuthInterceptor`): env credentials → 12h Bearer token in
+`localStorage` → `Authorization: Bearer …` on list/status/delete calls.
+401 auto-clears the token and shows the login screen again.
+
+Swap providers by implementing `SpeechToTextService` / `AIService` /
+`TextToSpeechService` — controllers and UI depend only on the interfaces.
+Ambiguous input (`2 milk dena`) returns `needsClarification: true` with
+`Kaunsa milk chahiye — Amul ya koi aur?` instead of guessing.
+
+## 14. Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Backend won't start | MongoDB running? `docker compose up -d`; Java 17+? port 8080 free? |
+| `Order must contain at least one item` (400) | Cart empty — add items first |
+| `Invalid status transition` (400) | Follow PENDING→ACCEPTED→PREPARING→READY→COMPLETED |
+| Shopkeeper sees nothing live | Open pages via `http://localhost:5173` (not `file://`); check WS badge; API URL in `frontend/.env` |
+| Mic does nothing | Allow mic permission; use localhost/HTTPS; typed input always works |
+| STT returns empty | No `DEEPGRAM_API_KEY` → mock path; browser Web Speech fallback engages automatically |
+| AI replies generic | No `GROQ_API_KEY` → deterministic mock; add key + restart for LLM |
+| No TTS audio | No `RIME_API_KEY` → reply shown as text + browser speechSynthesis |
+| Tests fail on new JDK | `OrderServiceTest`/`ConversationServiceTest` are Mockito-free and Mongo-free; run `mvn clean test -Dtest='OrderServiceTest,ConversationServiceTest'` |

@@ -1,6 +1,7 @@
 package com.kirana.assistant.repository;
 
 import com.kirana.assistant.model.Order;
+import com.kirana.assistant.model.OrderStatus;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.List;
@@ -12,7 +13,7 @@ public interface OrderRepository extends MongoRepository<Order, String> {
 
     Optional<Order> findFirstByCustomerIdOrderByCreatedAtDesc(String customerId);
 
-    List<Order> findByStatusOrderByCreatedAtDesc(String status);
+    List<Order> findByStatusOrderByCreatedAtDesc(OrderStatus status);
 
     List<Order> findAllByOrderByCreatedAtDesc();
 }

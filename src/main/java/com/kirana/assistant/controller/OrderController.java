@@ -1,90 +1,107 @@
 package com.kirana.assistant.controller;
 
+import com.kirana.assistant.dto.CreateOrderRequest;
 import com.kirana.assistant.dto.OrderResponse;
+import com.kirana.assistant.dto.UpdateOrderStatusRequest;
+import com.kirana.assistant.exception.InvalidOrderException;
 import com.kirana.assistant.model.Order;
+import com.kirana.assistant.model.OrderStatus;
 import com.kirana.assistant.repository.InventoryItemRepository;
-import com.kirana.assistant.repository.OrderRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.kirana.assistant.service.OrderService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Spec order API:
+ * POST /api/orders, GET /api/orders, GET /api/orders/{id},
+ * PATCH /api/orders/{id}/status, DELETE /api/orders/{id}.
+ *
+ * Thin controller — all logic lives in {@link OrderService}.
+ */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/orders")
 public class OrderController {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderController.class);
+    private final OrderService orderService;
+    private final InventoryItemRepository inventoryItemRepository;
 
-    @Autowired
-    private OrderRepository orderRepository;
-
-    @Autowired
-    private InventoryItemRepository inventoryItemRepository;
-
-    /**
-     * Get all orders (for the shopkeeper dashboard).
-     */
-    @GetMapping("/orders")
-    public ResponseEntity<List<OrderResponse>> getAllOrders() {
-        List<OrderResponse> orders = orderRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(orders);
+    public OrderController(OrderService orderService,
+                           InventoryItemRepository inventoryItemRepository) {
+        this.orderService = orderService;
+        this.inventoryItemRepository = inventoryItemRepository;
     }
 
-    /**
-     * Get a single order by ID.
-     */
-    @GetMapping("/orders/{orderId}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable String orderId) {
-        return orderRepository.findById(orderId)
-                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    @PostMapping
+    public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest req) {
+        Order saved = orderService.create(req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(OrderResponse.fromOrder(saved, inventoryItemRepository));
     }
 
-    /**
-     * Get orders by status.
-     */
-    @GetMapping("/orders/status/{status}")
-    public ResponseEntity<List<OrderResponse>> getOrdersByStatus(@PathVariable String status) {
-        List<OrderResponse> orders = orderRepository.findByStatusOrderByCreatedAtDesc(status)
-                .stream()
-                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(orders);
-    }
-
-    /**
-     * Update an order's status (e.g., shopkeeper marks order as COMPLETED).
-     */
-    @PostMapping("/orders/{orderId}/status")
-    public ResponseEntity<OrderResponse> updateOrderStatus(@PathVariable String orderId,
-                                                           @RequestBody Map<String, String> body) {
-        String newStatus = body.get("status");
-        if (newStatus == null) {
-            return ResponseEntity.badRequest().build();
+    @GetMapping
+    public ResponseEntity<List<OrderResponse>> list(
+            @RequestParam(value = "status", required = false) String status) {
+        List<Order> orders;
+        if (status != null && !status.isBlank()) {
+            OrderStatus s;
+            try {
+                s = OrderStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new InvalidOrderException("Invalid status: " + status);
+            }
+            orders = orderService.listByStatus(s);
+        } else {
+            orders = orderService.listAll();
         }
+        return ResponseEntity.ok(orders.stream()
+                .map(o -> OrderResponse.fromOrder(o, inventoryItemRepository))
+                .collect(Collectors.toList()));
+    }
 
-        return orderRepository.findById(orderId)
-                .map(order -> {
-                    order.setStatus(newStatus);
-                    order.setUpdatedAt(LocalDateTime.now());
-                    orderRepository.save(order);
-                    return ResponseEntity.ok(OrderResponse.fromOrder(order, inventoryItemRepository));
-                })
-                .orElse(ResponseEntity.notFound().build());
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderResponse> getOne(@PathVariable String id) {
+        return ResponseEntity.ok(
+                OrderResponse.fromOrder(orderService.getById(id), inventoryItemRepository));
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<OrderResponse> updateStatus(@PathVariable String id,
+                                                      @Valid @RequestBody UpdateOrderStatusRequest req) {
+        Order updated = orderService.updateStatus(id, req.getStatus());
+        return ResponseEntity.ok(OrderResponse.fromOrder(updated, inventoryItemRepository));
+    }
+
+    /** Backwards-compatible alias for older dashboard builds using POST. */
+    @PostMapping("/{id}/status")
+    public ResponseEntity<OrderResponse> updateStatusPost(@PathVariable String id,
+                                                          @RequestBody Map<String, String> body) {
+        Order updated = orderService.updateStatus(id, body.get("status"));
+        return ResponseEntity.ok(OrderResponse.fromOrder(updated, inventoryItemRepository));
+    }
+
+    /** Backwards-compatible alias: GET /api/orders/status/{status}. */
+    @GetMapping("/status/{status}")
+    public ResponseEntity<List<OrderResponse>> listByStatusPath(@PathVariable String status) {
+        return list(status);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        orderService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }
