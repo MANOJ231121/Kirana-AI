@@ -23,10 +23,13 @@ public class GroqLlmService {
 
     private static final String GROQ_BASE_URL = "https://api.groq.com";
     private static final String GROQ_PATH = "/openai/v1/chat/completions";
-    private static final String MODEL = "llama-3.3-70b-versatile";
+    private static final String DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
     @Value("${GROQ_API_KEY:}")
     private String groqApiKey;
+
+    @Value("${GROQ_LLM_MODEL:llama-3.3-70b-versatile}")
+    private String model;
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -55,9 +58,9 @@ public class GroqLlmService {
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.set("messages", messagesJson);
-        payload.put("model", MODEL);
+        payload.put("model", model);
         payload.put("temperature", temperature);
-        payload.put("max_completion_tokens", 512);
+        payload.put("max_tokens", 512);
 
         try {
             String response = webClient.post()
@@ -108,9 +111,9 @@ public class GroqLlmService {
 
             ObjectNode payload = objectMapper.createObjectNode();
             payload.set("messages", messagesJson);
-            payload.put("model", MODEL);
+            payload.put("model", model);
             payload.put("temperature", 0.2);
-            payload.put("max_completion_tokens", 512);
+            payload.put("max_tokens", 512);
             ObjectNode fmt = objectMapper.createObjectNode();
             fmt.put("type", "json_object");
             payload.set("response_format", fmt);

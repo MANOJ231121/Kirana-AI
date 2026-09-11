@@ -8,7 +8,12 @@ import java.util.Optional;
 
 public interface CallSessionRepository extends MongoRepository<CallSession, String> {
 
-    Optional<CallSession> findByCallSid(String callSid);
+    /**
+     * Latest session for a callSid. Used instead of findByCallSid so stale
+     * duplicate records (created before the save-order fix) can never turn
+     * an otherwise-correct lookup into a fatal exception.
+     */
+    Optional<CallSession> findTopByCallSidOrderByStartTimeDesc(String callSid);
 
     List<CallSession> findAllByOrderByStartTimeDesc();
 }

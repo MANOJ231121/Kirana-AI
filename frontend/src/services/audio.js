@@ -1,5 +1,8 @@
 // Audio playback utility for Rime AI voice & natural browser TTS fallback
 
+// Single-flight arbitration: only ONE voice may play at a time.
+// Every playback stops whatever came before it (MP3 or browser voice).
+
 export function getNaturalVoice() {
   if (!('speechSynthesis' in window)) return null;
   const voices = window.speechSynthesis.getVoices();
@@ -27,7 +30,7 @@ export function getNaturalVoice() {
 export function speakBrowser(text) {
   try {
     if (!('speechSynthesis' in window) || !text) return;
-    window.speechSynthesis.cancel();
+    stopAllAudio();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'hi-IN';
     u.rate = 0.95;
@@ -44,19 +47,45 @@ export function speakBrowser(text) {
   }
 }
 
+let currentAudio = null;
+
+export function stopAllAudio() {
+  try {
+    if (currentAudio) {
+      currentAudio.pause();
+      try {
+        URL.revokeObjectURL(currentAudio.src);
+      } catch { /* noop */ }
+      currentAudio = null;
+    }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  } catch (e) {
+    console.warn('stopAllAudio failed:', e);
+  }
+}
+
 export function playBase64Audio(base64, mime = 'audio/mpeg') {
   if (!base64) return false;
   try {
+    stopAllAudio();
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: mime });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.volume = 1.0;
+    currentAudio = audio;
+    audio.onended = () => {
+      if (currentAudio === audio) currentAudio = null;
+      try {
+        URL.revokeObjectURL(url);
+      } catch { /* noop */ }
+    };
 
     const playPromise = audio.play();
     if (playPromise !== undefined) {
       playPromise.catch((err) => {
         console.warn('Rime AI audio playback prevented or deferred by browser:', err);
+        if (currentAudio === audio) currentAudio = null;
       });
     }
     return true;

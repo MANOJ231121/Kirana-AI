@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { transcribeAudio } from '../services/api.js';
+import { fetchVoiceStatus, transcribeAudio } from '../services/api.js';
 
 /**
- * Microphone hook: prefers MediaRecorder upload to backend STT,
- * falls back to the browser Web Speech API when the backend has no key.
+ * Microphone hook: prefers backend STT when a real provider key is
+ * configured (Groq Whisper / Deepgram), otherwise uses the browser
+ * Web Speech API directly for an instant start/stop experience.
  */
 export function useSpeech({ onTranscript } = {}) {
   const [listening, setListening] = useState(false);
+  const [backendSttReady, setBackendSttReady] = useState(false);
   const [supported] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -18,6 +20,22 @@ export function useSpeech({ onTranscript } = {}) {
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
 
+  // Ask the backend which STT provider is live. When Groq/Deepgram are
+  // unavailable we skip the fixed 8s clip upload and use Web Speech.
+  useEffect(() => {
+    let mounted = true;
+    fetchVoiceStatus().then((s) => {
+      if (!mounted) return;
+      const p = s?.stt?.provider;
+      const avail = s?.stt?.available;
+      const real = p && (p === 'groq-whisper' || p === 'deepgram');
+      setBackendSttReady(Boolean(real && avail !== false));
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const stop = useCallback(() => {
     setListening(false);
     try {
@@ -28,6 +46,10 @@ export function useSpeech({ onTranscript } = {}) {
     } catch { /* noop */ }
     mediaRef.current?.getTracks?.().forEach((t) => t.stop());
     recRef.current = null;
+  }, []);
+
+  const warn = useCallback((msg) => {
+    if (typeof console !== 'undefined') console.warn(msg);
   }, []);
 
   const startBrowserSpeech = useCallback(() => {
@@ -44,9 +66,14 @@ export function useSpeech({ onTranscript } = {}) {
     rec.onend = () => setListening(false);
     rec.onerror = () => setListening(false);
     recRef.current = rec;
-    rec.start();
     setListening(true);
-    return true;
+    try {
+      rec.start();
+      return true;
+    } catch {
+      setListening(false);
+      return false;
+    }
   }, [onTranscript]);
 
   const start = useCallback(async () => {
@@ -54,7 +81,16 @@ export function useSpeech({ onTranscript } = {}) {
       stop();
       return;
     }
-    // Try backend STT via microphone capture first.
+
+    // Browser Web Speech is instant and ends when the user stops talking —
+    // prefer it when there is no real backend provider key configured.
+    if (!backendSttReady) {
+      if (startBrowserSpeech()) return;
+      warn('Speech recognition is not available in this browser.');
+      return;
+    }
+
+    // Real provider key present → capture a short clip and upload it.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRef.current = stream;
@@ -67,7 +103,10 @@ export function useSpeech({ onTranscript } = {}) {
         setListening(false);
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
         stream.getTracks().forEach((t) => t.stop());
-        if (!blob.size) return;
+        if (!blob.size) {
+          startBrowserSpeech();
+          return;
+        }
         try {
           const data = await transcribeAudio(blob);
           if (data?.transcript) onTranscript?.(data.transcript, data.provider || 'backend');
@@ -87,7 +126,7 @@ export function useSpeech({ onTranscript } = {}) {
     } catch {
       startBrowserSpeech();
     }
-  }, [listening, onTranscript, startBrowserSpeech, stop]);
+  }, [listening, backendSttReady, onTranscript, startBrowserSpeech, stop, warn]);
 
   useEffect(() => () => stop(), [stop]);
 

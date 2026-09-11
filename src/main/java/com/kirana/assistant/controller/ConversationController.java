@@ -66,6 +66,11 @@ public class ConversationController {
         return mockStt;
     }
 
+    private SpeechToTextService getNextSttService(SpeechToTextService primary) {
+        if (primary == groqStt && deepgram.isAvailable()) return deepgram;
+        return mockStt;
+    }
+
     private TextToSpeechService getActiveTtsService() {
         if (rime.isAvailable()) return rime;
         return mockTts;
@@ -92,7 +97,14 @@ public class ConversationController {
         try {
             byte[] bytes = audio.getBytes();
             SpeechToTextService stt = getActiveSttService();
-            String transcript = stt.transcribe(bytes, audio.getContentType());
+            String transcript;
+            try {
+                transcript = stt.transcribe(bytes, audio.getContentType());
+            } catch (Exception e) {
+                log.warn("Primary STT ({}) failed: {}", stt.providerName(), e.getMessage());
+                stt = getNextSttService(stt);
+                transcript = stt.transcribe(bytes, audio.getContentType());
+            }
             return ResponseEntity.ok(Map.of(
                     "transcript", transcript,
                     "provider", stt.providerName()));
@@ -142,11 +154,11 @@ public class ConversationController {
         TextToSpeechService tts = getActiveTtsService();
         return ResponseEntity.ok(Map.of(
                 "stt", Map.of("provider", stt.providerName(),
-                        "available", true,
+                        "available", stt.isAvailable(),
                         "browserFallback", "webspeech"),
                 "ai", Map.of("provider", conversationService.activeAiProvider(),
-                        "available", true),
+                        "available", conversationService.activeAiProvider().equals("groq")),
                 "tts", Map.of("provider", tts.providerName(),
-                        "available", true)));
+                        "available", tts.isAvailable())));
     }
 }

@@ -7,7 +7,7 @@ import {
   synthesizeSpeech,
   transcribeAudio,
 } from '../services/api.js';
-import { playBase64Audio, speakBrowser } from '../services/audio.js';
+import { playBase64Audio, speakBrowser, stopAllAudio } from '../services/audio.js';
 
 function playAiAudio(base64, mime, fallbackText) {
   if (base64) {
@@ -23,6 +23,9 @@ function playAiAudio(base64, mime, fallbackText) {
  * Live call session: greeting → voice turns (with real-time quantity
  * corrections) → spoken list verification → confirm pushes the order
  * live to the shopkeeper portal.
+ *
+ * Audio safety: single-flight playback (stopAllAudio before every voice),
+ * StrictMode-guarded single session start, and all audio killed on hang-up.
  */
 export default function CallShopkeeperModal({ customerName, phone, pickupTime, onClose, onOrderPlaced }) {
   const [phase, setPhase] = useState('starting'); // starting | live | verifying | done
@@ -36,26 +39,39 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
   const recRef = useRef(null);
   const streamRef = useRef(null);
   const liveRef = useRef(true);
+  const sidRef = useRef('');
 
   useEffect(() => {
+    // StrictMode-safe: each mount gets its own cancellation flag, so a
+    // remount always starts a fresh session instead of hanging on
+    // "Connecting…". The abandoned first session is ended best-effort.
+    let cancelled = false;
     liveRef.current = true;
     (async () => {
       try {
         const s = await startCall(phone);
-        if (!liveRef.current) return;
+        if (cancelled || !liveRef.current) {
+          try {
+            if (s?.callSid) await endCall({ callSid: s.callSid, phoneNumber: phone });
+          } catch { /* orphan cleanup */ }
+          return;
+        }
+        sidRef.current = s.callSid;
         setCallSid(s.callSid);
         setTurns([{ from: 'ai', text: s.greeting }]);
         playAiAudio(s.audioBase64, 'audio/mpeg', s.greeting);
         setPhase('live');
       } catch (e) {
-        if (liveRef.current) {
-          setError(e.message);
+        if (!cancelled && liveRef.current) {
+          setError(e.message || 'Could not start the call. Is the backend running on port 8080?');
           setPhase('live');
         }
       }
     })();
     return () => {
+      cancelled = true;
       liveRef.current = false;
+      stopAllAudio();
       try {
         recRef.current?.abort?.();
       } catch { /* noop */ }
@@ -83,8 +99,15 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
 
   const listenOnce = async () => {
     if (listening) return;
-    // Prefer backend STT via a short mic clip, fall back to Web Speech.
+    stopAllAudio();
+
+    // 1) Web Speech API streams live and auto-ends on silence — best UX
+    //    where Chrome/Edge is available (which is where the whole app runs).
+    if (listenBrowser()) return;
+
+    // 2) Otherwise record a short clip and send it to the backend STT.
     try {
+      setError('');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const rec = new MediaRecorder(stream);
@@ -100,9 +123,9 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
         try {
           const d = await transcribeAudio(blob);
           if (d?.transcript) sendTranscript(d.transcript);
-          else listenBrowser();
-        } catch {
-          listenBrowser();
+          else setError('No speech detected. Tap 🎤 and speak again.');
+        } catch (e) {
+          setError(e.message || 'Speech recognition unavailable on this browser.');
         }
       };
       recRef.current = rec;
@@ -112,15 +135,14 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
         if (rec.state !== 'inactive') rec.stop();
       }, 8000);
     } catch {
-      listenBrowser();
+      setError('Microphone unavailable — type your reply below.');
     }
   };
 
   const listenBrowser = () => {
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Ctor) {
-      setError('Microphone unavailable — type your reply below.');
-      return;
+      return false;
     }
     const rec = new Ctor();
     rec.lang = 'hi-IN';
@@ -136,8 +158,10 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
     setListening(true);
     try {
       rec.start();
+      return true;
     } catch {
       setListening(false);
+      return false;
     }
   };
 
@@ -176,6 +200,8 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
       try {
         await endCall({ callSid, phoneNumber: phone });
       } catch { /* noop */ }
+      stopAllAudio();
+      speakBrowser('Order confirm ho gaya. Dhanyavaad!');
       setPhase('done');
       onOrderPlaced?.(order);
     } catch (e) {
@@ -186,6 +212,7 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
   };
 
   const hangUp = async () => {
+    stopAllAudio();
     try {
       if (callSid) await endCall({ callSid, phoneNumber: phone });
     } catch { /* noop */ }
@@ -194,32 +221,40 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
 
   return (
     <div className="modal-backdrop" onClick={hangUp}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Call shopkeeper">
-        <header className="modal-head">
-          <b>📞 Calling Sharma Kirana Store…</b>
-          <span className={`call-dot ${phase === 'live' ? 'on' : ''}`} />
-          <button className="pill" onClick={hangUp}>Hang up ✕</button>
-        </header>
+      <div className="call-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Call shopkeeper">
+        <div className="call-header">
+          <span className="call-avatar">🏪</span>
+          <div className="call-id">
+            <b>Sharma Kirana Store</b>
+            <span className={`call-status ${phase === 'live' ? 'live' : ''}`}>
+              {phase === 'starting' ? 'Connecting…' : phase === 'done' ? 'Order sent ✓' : '● Live call'}
+            </span>
+          </div>
+          <button className="call-hangup" onClick={hangUp} aria-label="Hang up">✕</button>
+        </div>
 
         {phase === 'starting' && <p className="empty">Connecting your call…</p>}
-        {error && <p className="error">{error}</p>}
+        {error && <div className="error-banner">{error}</div>}
 
-        <div className="chat call-chat">
+        <div className="chat-box call-chat">
           {turns.map((t, i) => (
-            <p key={i} className={`bubble ${t.from}`}>
+            <p key={i} className={`chat-bubble ${t.from}`}>
               <b>{t.from === 'you' ? 'You: ' : 'AI: '}</b>{t.text}
             </p>
           ))}
         </div>
 
-        <section className="verify-box">
+        <section className="call-list">
           <h3>🧾 Live grocery list</h3>
           {items.length === 0 ? (
             <p className="empty">Nothing yet — say e.g. “1 kg Atta and 2 kg Chini”.</p>
           ) : (
             <ul>
               {items.map((i, idx) => (
-                <li key={idx}>{i.name} <em>× {i.quantity} {i.unit}</em></li>
+                <li key={idx}>
+                  <span>{i.name}</span>
+                  <b>× {i.quantity} {i.unit}</b>
+                </li>
               ))}
             </ul>
           )}
@@ -229,11 +264,11 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
         </section>
 
         {phase === 'verifying' && (
-          <p className="toast">🔊 {verifyText}</p>
+          <div className="toast-banner">🔊 {verifyText}</div>
         )}
 
         <form
-          className="typed"
+          className="typed-form"
           onSubmit={(e) => {
             e.preventDefault();
             const v = e.target.elements.typed.value;
@@ -242,24 +277,29 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
           }}
         >
           <input name="typed" placeholder="Type your reply…" autoComplete="off" />
-          <button className="btn primary" style={{ width: 'auto' }} type="submit" disabled={busy}>Send</button>
+          <button className="btn-primary" style={{ width: 'auto' }} type="submit" disabled={busy}>Send</button>
         </form>
 
-        <div className="actions" style={{ marginTop: 12 }}>
-          <button className={`mic small ${listening ? 'live' : ''}`} onClick={listenOnce} disabled={busy} aria-label="Speak">
+        <div className="call-actions">
+          <button className={`mic-btn ${listening ? 'live' : ''}`} onClick={listenOnce} disabled={busy} aria-label="Speak">
             🎤
           </button>
           {phase !== 'done' ? (
             <>
-              <button className="btn ghost" onClick={verifyList} disabled={busy || !items.length}>
+              <button className="action-btn verify" onClick={verifyList} disabled={busy || !items.length}>
                 🔊 Verify my list
               </button>
-              <button className="btn primary" onClick={confirmOrder} disabled={busy || !items.length || phase !== 'verifying'}>
-                ✅ Confirm & send to shopkeeper
+              <button
+                className="btn-primary"
+                style={{ flex: 1 }}
+                onClick={confirmOrder}
+                disabled={busy || !items.length || phase !== 'verifying'}
+              >
+                ✅ Confirm & send
               </button>
             </>
           ) : (
-            <p className="toast">🎉 Order sent to the shopkeeper — track it in your basket!</p>
+            <div className="toast-banner" style={{ flex: 1 }}>🎉 Order sent — track it in your basket!</div>
           )}
         </div>
       </div>

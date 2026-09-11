@@ -120,20 +120,43 @@ public class AiOrderAgentService {
             handleWhatsAppReference(customer, currentOrder, session);
         }
 
+        // Persist any item changes the caller made by speaking, and push to
+        // dashboard. Runs BEFORE the reply so the spoken list is saved even
+        // when the LLM itself is unreachable (rule-based fallback inside).
+        applySpokenActions(transcript, currentOrder, session);
+
         try {
             String response = groqLlmService.chatCompletion(messages, 0.8);
-
-            // Persist any item changes the caller made by speaking, and push to dashboard
-            applySpokenActions(transcript, currentOrder, session);
 
             // After LLM responds, check if inventory items are available
             response = checkInventoryAndPrompt(response, currentOrder);
 
             return response;
         } catch (Exception e) {
-            log.error("Error calling Groq LLM", e);
-            return "Sorry, kuch problem hua. Aap dobara bata sakte hain?";
+            log.warn("Groq LLM unreachable, using offline reply: {}", e.getMessage());
+            return offlineReply(currentOrder);
         }
+    }
+
+    /**
+     * Offline reply when the LLM is unreachable: confirms the spoken list
+     * out loud so the call keeps working without any API key.
+     */
+    private String offlineReply(Order order) {
+        if (order.getItems() == null || order.getItems().isEmpty()) {
+            return "Boliye, kya chahiye? Jaise 1 kg Atta and 2 kg Chini.";
+        }
+        StringBuilder sb = new StringBuilder("Theek hai, list mein hai: ");
+        for (int i = 0; i < order.getItems().size(); i++) {
+            OrderItem it = order.getItems().get(i);
+            sb.append((int) it.getQuantity()).append(" ").append(it.getUnit())
+                    .append(" ").append(it.getName());
+            if (i < order.getItems().size() - 1) {
+                sb.append(", ");
+            }
+        }
+        sb.append(". Aur kuch chahiye, ya confirm kar doon?");
+        return sb.toString();
     }
 
     /**
@@ -188,11 +211,24 @@ public class AiOrderAgentService {
      * "No no, I want 2 kg Atta instead" by overwriting the matched item's quantity.
      */
     private void applyRuleBasedActions(String transcript, Order order, CallSession session) {
+        String lower = transcript.toLowerCase();
+
+        // Offline confirmation: "haan, confirm kar do" locks the spoken list in.
+        if (!order.getItems().isEmpty()
+                && lower.matches(".*\\b(haan|haa|confirm|kar do|pakka|theek hai|order confirm)\\b.*")
+                && lower.length() < 60) {
+            order.setStatus(OrderStatus.ACCEPTED);
+            order.setUpdatedAt(java.time.LocalDateTime.now());
+            orderRepository.save(order);
+            dashboardNotifierService.notifyOrderUpdate(order, "ORDER_CONFIRMED");
+            addOrderChange(session, "ORDER_CONFIRMED");
+            return;
+        }
+
         List<OrderItem> parsed = orderParsingService.parseList(transcript);
         if (parsed.isEmpty()) {
             return;
         }
-        String lower = transcript.toLowerCase();
         boolean correction = lower.matches(".*\\b(instead|actually|change|sorry|rather|correction)\\b.*")
                 || lower.matches(".*\\b(no+\\s+no+|nahi|nahin|badal|usko|isko)\\b.*");
 

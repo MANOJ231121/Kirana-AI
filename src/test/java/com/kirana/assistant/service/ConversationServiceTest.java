@@ -21,7 +21,7 @@ class ConversationServiceTest {
     private com.kirana.assistant.service.ai.GroqAiService nullSafeGroq() {
         // Groq without a key → isAvailable() false → mock path. Build without Spring.
         return new com.kirana.assistant.service.ai.GroqAiService(null, null,
-                new MockAiService(new OrderParsingService())) {
+                new MockAiService(new OrderParsingService()), new GroqKeyHealth()) {
             @Override
             public boolean isAvailable() {
                 return false;

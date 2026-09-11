@@ -228,3 +228,16 @@ export async function transcribeAudio(blob) {
   if (!res.ok) throw new Error(data?.message || 'STT failed');
   return data;
 }
+
+// ---------- voice provider status ----------
+
+export async function fetchVoiceStatus() {
+  try {
+    const res = await fetch(`${API}/api/voice/status`);
+    const data = await json(res);
+    if (!res.ok) throw new Error(data?.message || 'Status failed');
+    return data;
+  } catch {
+    return null;
+  }
+}

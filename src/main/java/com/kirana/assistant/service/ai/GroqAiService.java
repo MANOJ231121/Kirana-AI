@@ -3,6 +3,7 @@ package com.kirana.assistant.service.ai;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kirana.assistant.model.OrderItem;
+import com.kirana.assistant.service.GroqKeyHealth;
 import com.kirana.assistant.service.GroqLlmService;
 import com.kirana.assistant.service.OrderParsingService;
 import org.slf4j.Logger;
@@ -39,6 +40,7 @@ public class GroqAiService implements AIService {
     private final GroqLlmService groq;
     private final ObjectMapper mapper;
     private final MockAiService fallback;
+    private final GroqKeyHealth keyHealth;
 
     @Value("${GROQ_API_KEY:}")
     private String groqApiKey;
@@ -46,10 +48,15 @@ public class GroqAiService implements AIService {
     @Value("${LLM_API_KEY:}")
     private String llmApiKey;
 
-    public GroqAiService(GroqLlmService groq, ObjectMapper mapper, MockAiService fallback) {
+    /** Locked off after an auth failure so the app fails fast to the rule-based fallback. */
+    private volatile boolean authFailed;
+
+    public GroqAiService(GroqLlmService groq, ObjectMapper mapper, MockAiService fallback,
+                         GroqKeyHealth keyHealth) {
         this.groq = groq;
         this.mapper = mapper;
         this.fallback = fallback;
+        this.keyHealth = keyHealth;
     }
 
     private String getApiKey() {
@@ -79,9 +86,32 @@ public class GroqAiService implements AIService {
             JsonNode root = mapper.readTree(json);
             return validate(root, transcript);
         } catch (Exception e) {
-            log.warn("Groq AI parse failed, using mock fallback: {}", e.getMessage());
+            if (isAuthFailure(e)) {
+                authFailed = true;
+                keyHealth.markInvalid();
+                log.error("Groq AI auth failed, locking off Groq LLM for this run: {}", e.getMessage());
+            } else {
+                log.warn("Groq AI parse failed, using mock fallback: {}", e.getMessage());
+            }
             return fallback.parseUtterance(transcript, currentItems);
         }
+    }
+
+    private boolean isAuthFailure(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            String msg = cur.getMessage();
+            if (msg != null) {
+                String m = msg.toLowerCase();
+                if (m.contains("401") || m.contains("403") || m.contains("unauthorized")
+                        || m.contains("invalid api key") || m.contains("authentication")
+                        || m.contains("api key")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     private AiOrderParseResult validate(JsonNode root, String transcript) {
@@ -142,7 +172,13 @@ public class GroqAiService implements AIService {
 
     @Override
     public boolean isAvailable() {
+        if (authFailed) {
+            return false;
+        }
         String key = getApiKey();
-        return !key.isBlank();
+        if (key.isBlank()) {
+            return false;
+        }
+        return keyHealth.isValidated() ? keyHealth.isAvailable() : true;
     }
 }

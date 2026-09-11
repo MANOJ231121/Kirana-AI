@@ -197,6 +197,12 @@ export default function CustomerPage() {
   const [wakeOn, setWakeOn] = useState(false);
   const [hasWelcomed, setHasWelcomed] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
+
+  // The call has its own mic + speaker: mute the passive wake-word
+  // listener while it is open so the AI never hears (and answers) itself.
+  useEffect(() => {
+    if (callOpen) setWakeOn(false);
+  }, [callOpen]);
   const [assistantState, setAssistantState] = useState('Tap the mic, type, or say “Siri…” / “Kirana…”');
   const pollRef = useRef(null);
 

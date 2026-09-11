@@ -43,13 +43,14 @@ public class WebCallController {
         log.info("Starting WebCall session {} for customer {}", callSid, phoneNumber);
 
         CallSession session = new CallSession(callSid, phoneNumber);
-        callSessionRepository.save(session);
-
-        dashboardNotifierService.notifyCallUpdate("Web Call started from: " + phoneNumber);
-
         String greeting = "Hello! Welcome to Sharma Kirana Store. What would you like to order today? Your order will be processed and be ready before you reach us!";
         session.addTranscriptEntry("AI", greeting);
-        callSessionRepository.save(session);
+        // Single save - a new session MUST NOT be persisted twice or the
+        // `callSid` lookup later fails with "returned non unique result".
+        CallSession saved = callSessionRepository.save(session);
+        session.setId(saved.getId());
+
+        dashboardNotifierService.notifyCallUpdate("Web Call started from: " + phoneNumber);
 
         String base64Audio = "";
         try {
@@ -82,7 +83,7 @@ public class WebCallController {
             return ResponseEntity.badRequest().build();
         }
 
-        CallSession session = callSessionRepository.findByCallSid(callSid)
+        CallSession session = callSessionRepository.findTopByCallSidOrderByStartTimeDesc(callSid)
                 .orElseGet(() -> {
                     CallSession cs = new CallSession(callSid, phoneNumber);
                     return callSessionRepository.save(cs);
@@ -130,7 +131,7 @@ public class WebCallController {
         log.info("Ending WebCall session {}", callSid);
 
         if (callSid != null) {
-            callSessionRepository.findByCallSid(callSid).ifPresent(session -> {
+            callSessionRepository.findTopByCallSidOrderByStartTimeDesc(callSid).ifPresent(session -> {
                 session.setEndTime(java.time.LocalDateTime.now());
                 session.setStatus("COMPLETED");
                 callSessionRepository.save(session);

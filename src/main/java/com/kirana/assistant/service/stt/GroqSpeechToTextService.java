@@ -2,6 +2,7 @@ package com.kirana.assistant.service.stt;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kirana.assistant.service.GroqKeyHealth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,10 +32,15 @@ public class GroqSpeechToTextService implements SpeechToTextService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final GroqKeyHealth keyHealth;
 
-    public GroqSpeechToTextService(ObjectMapper objectMapper) {
+    /** Set to true once a request fails with an auth error, to fail fast on repeat calls. */
+    private volatile boolean authFailed;
+
+    public GroqSpeechToTextService(ObjectMapper objectMapper, GroqKeyHealth keyHealth) {
         this.webClient = WebClient.builder().build();
         this.objectMapper = objectMapper;
+        this.keyHealth = keyHealth;
     }
 
     @Override
@@ -71,22 +77,34 @@ public class GroqSpeechToTextService implements SpeechToTextService {
 
         log.info("Sending {} bytes to Groq Whisper STT (model: {})", audio.length, whisperModel);
 
-        String response = webClient.post()
-                .uri(GROQ_AUDIO_URL)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(BodyInserters.fromMultipartData(builder.build()))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+        try {
+            String response = webClient.post()
+                    .uri(GROQ_AUDIO_URL)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(BodyInserters.fromMultipartData(builder.build()))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
 
-        if (response != null) {
-            JsonNode root = objectMapper.readTree(response);
-            String transcript = root.path("text").asText("").trim();
-            log.info("Groq Whisper transcript: {}", transcript);
-            return transcript;
+            if (response != null) {
+                JsonNode root = objectMapper.readTree(response);
+                String transcript = root.path("text").asText("").trim();
+                log.info("Groq Whisper transcript: {}", transcript);
+                return transcript;
+            }
+            return "";
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            if (msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid api key")
+                    || msg.contains("authentication") || msg.contains("api key")) {
+                authFailed = true;
+                keyHealth.markInvalid();
+                log.error("Groq Whisper auth failed, disabling Groq STT for this run: {}", e.getMessage());
+                throw new IllegalStateException("GROQ_API_KEY is invalid");
+            }
+            throw e;
         }
-        return "";
     }
 
     @Override
@@ -96,6 +114,12 @@ public class GroqSpeechToTextService implements SpeechToTextService {
 
     @Override
     public boolean isAvailable() {
-        return apiKey != null && !apiKey.isBlank();
+        if (authFailed) {
+            return false;
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            return false;
+        }
+        return keyHealth.isValidated() ? keyHealth.isAvailable() : true;
     }
 }

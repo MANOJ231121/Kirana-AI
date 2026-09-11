@@ -9,7 +9,6 @@ import org.springframework.core.env.MapPropertySource;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,13 +22,13 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor 
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        File envFile = new File(".env");
-        if (!envFile.exists()) {
+        File envFile = findEnvFile();
+        if (envFile == null) {
             return;
         }
 
         try {
-            List<String> lines = Files.readAllLines(Paths.get(".env"));
+            List<String> lines = Files.readAllLines(envFile.toPath());
             Map<String, Object> envProps = new HashMap<>();
             for (String line : lines) {
                 line = line.trim();
@@ -55,5 +54,29 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor 
         } catch (Exception e) {
             log.warn("Failed to load .env file into Spring Environment: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Locates the .env file in several known locations, independent of the
+     * JVM working directory, so the app also picks it up when launched from
+     * an IDE or from a packaged jar.
+     */
+    private File findEnvFile() {
+        String userDir = System.getProperty("user.dir", "");
+        List<File> candidates = new java.util.ArrayList<>(List.of(
+                new File(".env"),
+                new File(userDir, ".env"),
+                new File("target/classes/.env")
+        ));
+        if (userDir != null && !userDir.isBlank() && userDir.endsWith("target/classes")) {
+            candidates.add(new File(userDir, "../../.env"));
+        }
+        for (File c : candidates) {
+            if (c.isFile()) {
+                log.info("Loading .env from {}", c.getAbsolutePath());
+                return c;
+            }
+        }
+        return null;
     }
 }
