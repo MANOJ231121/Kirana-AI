@@ -22,7 +22,9 @@ public class OrderParsingService {
                     Pattern.CASE_INSENSITIVE);
     /** Splits "1 kg Atta and 2 kg Chini" / "atta, chini aur dal" into fragments. */
     private static final Pattern FRAGMENT_SPLIT = Pattern.compile(
-            "\\s*(?:,|&|\\bplus\\b|\\bor\\b|\\band\\b|\\baur\\b|\\btatha\\b|\\s+with\\s+)\\s*",
+            "\\s*(?:,|&|\\bplus\\b|\\bor\\b|\\band\\b|\\baur\\b|\\btatha\\b|\\s+with\\s+"
+                    + "|(?<![\\p{IsDevanagari}])और(?![\\p{IsDevanagari}])"
+                    + "|(?<![\\p{IsDevanagari}])तथा(?![\\p{IsDevanagari}]))\\s*",
             Pattern.CASE_INSENSITIVE);
 
     private static final java.util.Map<String, Double> HINDI_NUMBERS = java.util.Map.ofEntries(
@@ -56,6 +58,35 @@ public class OrderParsingService {
             java.util.Map.entry("biscuits", "Biscuit"), java.util.Map.entry("biskit", "Biscuit"),
             java.util.Map.entry("bread", "Bread"), java.util.Map.entry("detergent", "Detergent"));
 
+    /** Devanagari (Hindi script) spoken names → catalog names shown in the UI. */
+    private static final java.util.Map<String, String> DEVA_ALIASES = java.util.Map.ofEntries(
+            java.util.Map.entry("आटा", "Atta"), java.util.Map.entry("अटा", "Atta"),
+            java.util.Map.entry("गेहूँ का आटा", "Atta"), java.util.Map.entry("गेहूं का आटा", "Atta"),
+            java.util.Map.entry("चावल", "Rice"), java.util.Map.entry("चवल", "Rice"),
+            java.util.Map.entry("दाल", "Dal"), java.util.Map.entry("दल", "Dal"),
+            java.util.Map.entry("दूध", "Milk"), java.util.Map.entry("दुध", "Milk"),
+            java.util.Map.entry("घी", "Ghee"), java.util.Map.entry("घ्य", "Ghee"),
+            java.util.Map.entry("चीनी", "Sugar"), java.util.Map.entry("शक्कर", "Sugar"),
+            java.util.Map.entry("नमक", "Salt"),
+            java.util.Map.entry("चाय", "Tea"),
+            java.util.Map.entry("मैगी", "Maggi"), java.util.Map.entry("मग्गी", "Maggi"),
+            java.util.Map.entry("नूडल्स", "Maggi"),
+            java.util.Map.entry("बिस्कुट", "Biscuit"), java.util.Map.entry("बिस्किट", "Biscuit"),
+            java.util.Map.entry("अंडा", "Eggs"), java.util.Map.entry("अंडे", "Eggs"), java.util.Map.entry("अन्डा", "Eggs"),
+            java.util.Map.entry("ब्रेड", "Bread"),
+            java.util.Map.entry("तेल", "Oil"), java.util.Map.entry("तैल", "Oil"),
+            java.util.Map.entry("प्याज", "Onion"), java.util.Map.entry("प्याज़", "Onion"),
+            java.util.Map.entry("आलू", "Potato"), java.util.Map.entry("अलू", "Potato"),
+            java.util.Map.entry("टमाटर", "Tomato"),
+            java.util.Map.entry("शैम्पू", "Shampoo"), java.util.Map.entry("शैंपू", "Shampoo"),
+            java.util.Map.entry("डिटर्जेंट", "Detergent"), java.util.Map.entry("साबुन", "Detergent"));
+
+    /** Canonical catalog names — only these survive as parsed visible items. */
+    static final java.util.Set<String> KNOWN_NAMES = java.util.Set.of(
+            "Atta", "Rice", "Dal", "Milk", "Ghee", "Sugar", "Salt", "Tea", "Maggi",
+            "Biscuit", "Eggs", "Bread", "Oil", "Onion", "Potato", "Tomato",
+            "Butter", "Shampoo", "Detergent");
+
     /**
      * Parse a grocery list text into structured order items.
      * Handles formats like:
@@ -84,6 +115,24 @@ public class OrderParsingService {
         return items;
     }
 
+    /** Like {@link #parseList} but only returns items whose name resolves to a
+     * known catalog item. Garbled STT fragments ("कज अतत") and stray address
+     * words never leak into the visible order. */
+    public List<OrderItem> parseKnownList(String message) {
+        List<OrderItem> known = new ArrayList<>();
+        for (OrderItem item : parseList(message)) {
+            if (isKnownName(item.getName())) {
+                known.add(item);
+            }
+        }
+        return known;
+    }
+
+    /** True if the name is one of the canonical catalog items. */
+    public boolean isKnownName(String name) {
+        return name != null && KNOWN_NAMES.contains(name);
+    }
+
     private List<String> splitFragments(String line) {
         List<String> out = new ArrayList<>();
         if (line == null) {
@@ -103,6 +152,8 @@ public class OrderParsingService {
 
     private OrderItem parseLine(String line) {
         line = line.replaceAll("[\\d]+\\.\\s*", "").trim();
+        // Hindi-script (Devanagari) STT output — normalize to Roman before parsing.
+        line = normalizeSpokenScript(line);
         // Shorthand: "1k atta" means 1 kg in kirana speech (k attached to digits).
         line = line.replaceAll("(?i)\\b(\\d+(?:\\.\\d+)?)k\\b", "$1 kg").trim();
         // Leading wake word is not an item: "Siri, 1 kg atta".
@@ -153,7 +204,9 @@ public class OrderParsingService {
         name = name
                 // Command filler, not items: "atta dalna list mai", "mujhe dedo"
                 .replaceAll("(?i)\\b(dalna|dalo|dena|dedo|lena|lo|add|karo|kar|chahiye|chahida|please|kripya|list|mein|mai|mujhe|muje|mera|meri|mere|ko|ke|liye|thoda|zara|bhej|bhejo|lao|laa|de|bhaiya|bhai)\\b", "")
-                .replaceAll("[^\\p{L}\\s]|^\\s+|\\s+$", "")
+                // Devanagari filler words (Java \b is ASCII-only, so use lookarounds).
+                .replaceAll("(?<![\\p{IsDevanagari}])(मुझे|मेरा|मेरी|में|के|को|लिए|लिये|चाहिए|कर|करो|डालो|हटाओ|लिस्ट|दे|देदो|बताओ|नहीं|थोड़ा|ज़रा|वाले|से|है|हैं|और|तोड़|बस|फिर|आप|मैं|चाहिये)(?![\\p{IsDevanagari}])", "")
+                .replaceAll("[^\\p{L}\\p{M}\\s]|^\\s+|\\s+$", "")
                 .replaceAll("\\s+", " ")
                 .trim();
 
@@ -161,7 +214,12 @@ public class OrderParsingService {
             return null;
         }
 
-        String alias = ALIASES.get(name.toLowerCase());
+        String key = name.toLowerCase();
+        String alias = ALIASES.get(key);
+        if (alias == null) {
+            // Devanagari item names match verbatim (no case folding in Devanagari).
+            alias = DEVA_ALIASES.get(name);
+        }
         if (alias != null) {
             name = alias;
         } else {
@@ -170,6 +228,49 @@ public class OrderParsingService {
 
         log.debug("Parsed item: {} x {} {}", name, quantity, unit);
         return new OrderItem(name, quantity, unit);
+    }
+
+    /**
+     * Browser Hindi STT often returns Devanagari: "एक किलो आटा और दो किलो चीनी".
+     * Convert digits/number-words/units to the Roman forms the parser already handles,
+     * leaving item names in Devanagari so DEVA_ALIASES can map them to catalog names.
+     */
+    private String normalizeSpokenScript(String line) {
+        if (line == null || line.isBlank()) {
+            return line;
+        }
+        // Devanagari digits ०-९ -> ASCII 0-9.
+        char[] de = new char[]{'०', '१', '२', '३', '४', '५', '६', '७', '८', '९'};
+        char[] as = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+        for (int i = 0; i < de.length; i++) {
+            line = line.replace(de[i], as[i]);
+        }
+        // Unit words (longest first so किलोग्राम isn't partially replaced by किलो).
+        line = line.replaceAll("किलोग्राम", "kg");
+        line = line.replaceAll("किलो", "kilo");
+        line = line.replaceAll("किग्रा", "kg");
+        line = line.replaceAll("ग्राम", "gram");
+        line = line.replaceAll("लीटर", "litre");
+        line = line.replaceAll("लिटर", "litre");
+        line = line.replaceAll("पैकेट", "packet");
+        line = line.replaceAll("पैकेट", "packet");
+        line = line.replaceAll("पैक", "packet");
+        line = line.replaceAll("बोतल", "bottle");
+        line = line.replaceAll("पीस", "piece");
+        // Hindi number words -> Roman words the HINDI_NUMBER_PATTERN understands.
+        line = line.replaceAll("एक", "ek")
+                .replaceAll("दो", "do")
+                .replaceAll("तीन", "teen")
+                .replaceAll("चार", "char")
+                .replaceAll("पाँच", "paanch")
+                .replaceAll("पांच", "paanch")
+                .replaceAll("छह", "chhah")
+                .replaceAll("छः", "chhah")
+                .replaceAll("सात", "saat")
+                .replaceAll("आठ", "aath")
+                .replaceAll("नौ", "nau")
+                .replaceAll("दस", "das");
+        return line;
     }
 
     private String normalizeUnit(String unitWord) {

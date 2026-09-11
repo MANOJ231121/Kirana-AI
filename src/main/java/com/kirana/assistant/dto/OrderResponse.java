@@ -17,6 +17,7 @@ public class OrderResponse {
     private List<OrderItem> items;
     private String status;
     private String pickupTime;
+    private String address;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private double totalPrice;
@@ -41,6 +42,7 @@ public class OrderResponse {
         response.setItems(order.getItems());
         response.setStatus(order.getStatus() != null ? order.getStatus().name() : null);
         response.setPickupTime(order.getPickupTime());
+        response.setAddress(order.getAddress());
         response.setCreatedAt(order.getCreatedAt());
         response.setUpdatedAt(order.getUpdatedAt());
 
@@ -104,6 +106,14 @@ public class OrderResponse {
 
     public void setPickupTime(String pickupTime) {
         this.pickupTime = pickupTime;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public LocalDateTime getCreatedAt() {

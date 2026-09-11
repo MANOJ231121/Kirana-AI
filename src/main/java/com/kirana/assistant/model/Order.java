@@ -27,6 +27,9 @@ public class Order {
 
     private String customerPhone;
 
+    /** Customer delivery/pickup address captured via voice or the storefront. */
+    private String address;
+
     /** Legacy: linked Customer document id (phone-call flows). */
     private String customerId;
 
@@ -71,6 +74,14 @@ public class Order {
 
     public void setCustomerPhone(String customerPhone) {
         this.customerPhone = customerPhone;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public String getCustomerId() {

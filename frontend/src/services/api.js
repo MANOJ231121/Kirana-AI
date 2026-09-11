@@ -58,11 +58,11 @@ export async function sendConversation({ transcript, currentItems }) {
   return data;
 }
 
-export async function createOrder({ customerName, customerPhone, items, pickupTime }) {
+export async function createOrder({ customerName, customerPhone, items, pickupTime, address }) {
   const res = await fetch(`${API}/api/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ customerName, customerPhone, items, pickupTime }),
+    body: JSON.stringify({ customerName, customerPhone, items, pickupTime, address }),
   });
   const data = await json(res);
   if (!res.ok) throw new Error(data?.message || 'Order failed');
@@ -169,6 +169,17 @@ export async function endWebCall({ callSid, phoneNumber }) {
   });
   const data = await json(res);
   if (!res.ok) throw new Error(data?.message || 'Call end failed');
+  return data;
+}
+
+export async function updateWebCallOrder({ phoneNumber, itemName, action, quantity }) {
+  const res = await fetch(`${API}/api/web-call/order-update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phoneNumber, itemName, action, quantity }),
+  });
+  const data = await json(res);
+  if (!res.ok) throw new Error(data?.message || 'Order item update failed');
   return data;
 }
 

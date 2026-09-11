@@ -63,6 +63,7 @@ public class OrderService {
         }
         order.setItems(items);
         order.setPickupTime(req.getPickupTime());
+        order.setAddress(req.getAddress());
         order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(LocalDateTime.now());
         order.setUpdatedAt(LocalDateTime.now());

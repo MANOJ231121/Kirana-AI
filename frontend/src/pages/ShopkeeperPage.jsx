@@ -2,6 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchOrders, getToken, login, logout, me, updateOrderStatus } from '../services/api.js';
 import { useOrdersSocket } from '../websocket/useOrdersSocket.js';
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  ClockIcon,
+  HistoryIcon,
+  LogoutIcon,
+  SearchIcon,
+  ShieldIcon,
+  StoreIcon,
+  XIcon,
+} from '../components/Icons.jsx';
 
 const TABS = ['All', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'REJECTED', 'CANCELLED', 'History'];
 
@@ -65,21 +77,25 @@ export default function ShopkeeperPage() {
       <div className="page">
         <header className="topbar">
           <Link to="/" className="brand">
-            <span className="brand-mark">🏪</span>
+            <span className="brand-mark">
+              <StoreIcon size={24} />
+            </span>
             <div>
               <h1>Shopkeeper Portal</h1>
               <small>Authorized Access Only</small>
             </div>
           </Link>
           <nav className="navlinks">
-            <Link to="/" className="nav-link">← Home</Link>
-            <Link to="/customer" className="nav-link primary">Customer Store →</Link>
+            <Link to="/" className="nav-link"><ArrowLeftIcon size={15} /> Home</Link>
+            <Link to="/customer" className="nav-link primary">Customer Store <ArrowRightIcon size={15} /></Link>
           </nav>
         </header>
 
         <div style={{ maxWidth: '440px', margin: '40px auto 0' }}>
           <section className="card">
-            <h2 className="card-title" style={{ marginBottom: 6 }}>🔐 Shopkeeper Login</h2>
+            <h2 className="card-title" style={{ marginBottom: 6 }}>
+              <span className="title-icon"><ShieldIcon size={18} /> Shopkeeper Login</span>
+            </h2>
             <p className="card-subtitle">Sign in to manage store inventory and fulfill real-time customer orders.</p>
 
             {loginError && <div className="error-banner">{loginError}</div>}
@@ -112,7 +128,7 @@ export default function ShopkeeperPage() {
             </form>
 
             <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--card-border)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Default credentials: <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>shopkeeper / changeme</code>
+              Default credentials: <code style={{ background: 'var(--primary-soft)', color: 'var(--primary)', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>shopkeeper / changeme</code>
             </div>
           </section>
         </div>
@@ -151,7 +167,7 @@ function Dashboard({ user, onLogout }) {
   useOrdersSocket({
     onOrderEvent: (payload) => {
       if (payload?.action === 'CREATED') {
-        setToast('🔔 New Customer Order Received!');
+        setToast('New Customer Order Received!');
         setTimeout(() => setToast(''), 4500);
       }
       loadOrders();
@@ -180,7 +196,8 @@ function Dashboard({ user, onLogout }) {
         (o) =>
           (o.id && o.id.toLowerCase().includes(query)) ||
           (o.customerName && o.customerName.toLowerCase().includes(query)) ||
-          (o.customerPhone && o.customerPhone.toLowerCase().includes(query)),
+          (o.customerPhone && o.customerPhone.toLowerCase().includes(query)) ||
+          (o.address && o.address.toLowerCase().includes(query)),
       );
     }
     if (tab === 'All') return orders;
@@ -202,7 +219,9 @@ function Dashboard({ user, onLogout }) {
     <div className="page">
       <header className="topbar">
         <Link to="/" className="brand">
-          <span className="brand-mark">🏪</span>
+          <span className="brand-mark">
+            <StoreIcon size={24} />
+          </span>
           <div>
             <h1>Shopkeeper Dashboard</h1>
             <small>Logged in as <b>{user}</b> {pendingCount > 0 ? `• ${pendingCount} pending order(s)` : ''}</small>
@@ -210,7 +229,7 @@ function Dashboard({ user, onLogout }) {
         </Link>
         <nav className="navlinks">
           <ConnectionBadge />
-          <button className="nav-link" onClick={onLogout}>Logout ⏻</button>
+          <button className="nav-link" onClick={onLogout}><LogoutIcon size={15} /> Logout</button>
         </nav>
       </header>
 
@@ -231,7 +250,7 @@ function Dashboard({ user, onLogout }) {
               className={`tab-btn ${t === tab ? 'active' : ''}`}
               onClick={() => setTab(t)}
             >
-              {t === 'History' ? '📜 Order History' : t} {count > 0 ? `(${count})` : ''}
+              {t === 'History' ? 'Order History' : t} {count > 0 ? `(${count})` : ''}
             </button>
           );
         })}
@@ -240,29 +259,29 @@ function Dashboard({ user, onLogout }) {
       {tab === 'History' && (
         <section className="card" style={{ marginBottom: 20 }}>
           <div className="card-title">
-            <span>📜 Order History & Revenue Analytics</span>
+            <span className="title-icon"><HistoryIcon size={18} /> Order History & Revenue Analytics</span>
             <small style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Completed & Archived Orders</small>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, margin: '16px 0' }}>
-            <div style={{ background: '#f8fafc', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
+            <div style={{ background: 'rgba(10, 16, 32, 0.7)', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
               <small style={{ color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Revenue</small>
               <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)' }}>₹{historyMetrics.revenue.toFixed(0)}</div>
             </div>
 
-            <div style={{ background: '#f8fafc', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
+            <div style={{ background: 'rgba(10, 16, 32, 0.7)', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
               <small style={{ color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Completed Orders</small>
               <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-emerald)' }}>{historyMetrics.completed}</div>
             </div>
 
-            <div style={{ background: '#f8fafc', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
+            <div style={{ background: 'rgba(10, 16, 32, 0.7)', border: '1px solid var(--card-border)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
               <small style={{ color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Records</small>
               <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)' }}>{historyMetrics.count}</div>
             </div>
           </div>
 
           <div className="search-box">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon"><SearchIcon size={17} /></span>
             <input
               type="text"
               placeholder="Search history by Customer Name, Phone, or Order ID..."
@@ -280,7 +299,7 @@ function Dashboard({ user, onLogout }) {
       ) : filteredOrders.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
           <p style={{ fontSize: '1.1rem', fontWeight: 600 }}>No {tab} records found.</p>
-          <small>Order history and status records pop up here automatically! 📜</small>
+          <small>Order history and status records pop up here automatically.</small>
         </div>
       ) : (
         <div className="orders-grid">
@@ -294,12 +313,17 @@ function Dashboard({ user, onLogout }) {
               <div className="order-customer">
                 Customer: <b>{o.customerName || 'Walk-in Customer'}</b>{' '}
                 {o.customerPhone && <span style={{ fontSize: '0.8rem' }}>({o.customerPhone})</span>}
+                {o.address && (
+                  <span className="order-address" style={{ display: 'block', marginTop: 4, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Deliver to: <b>{o.address}</b>
+                  </span>
+                )}
               </div>
 
               <ul className="order-items-list">
                 {(o.items || []).map((item, idx) => (
                   <li key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>• {item.name}</span>
+                    <span className="dot">•</span> <span>{item.name}</span>
                     <b>× {item.quantity} {item.unit}</b>
                   </li>
                 ))}
@@ -310,8 +334,8 @@ function Dashboard({ user, onLogout }) {
                 {o.totalPrice ? <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>₹{o.totalPrice}</span> : null}
               </div>
               {tab === 'History' && o.createdAt && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                  🕒 {new Date(o.createdAt).toLocaleString('en-IN')}
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ClockIcon size={13} /> {new Date(o.createdAt).toLocaleString('en-IN')}
                 </div>
               )}
 
@@ -325,7 +349,17 @@ function Dashboard({ user, onLogout }) {
                         className={`action-btn ${isNegative ? 'reject' : 'accept'}`}
                         onClick={() => handleStatusChange(o.id, nextStatus)}
                       >
-                        {nextStatus === 'ACCEPTED' ? '✅ Accept Order' : nextStatus === 'REJECTED' ? '✕ Reject' : nextStatus}
+                        {nextStatus === 'ACCEPTED' ? (
+                          <>
+                            <CheckIcon size={15} /> Accept Order
+                          </>
+                        ) : nextStatus === 'REJECTED' ? (
+                          <>
+                            <XIcon size={15} /> Reject
+                          </>
+                        ) : (
+                          nextStatus
+                        )}
                       </button>
                     );
                   })}
@@ -346,7 +380,7 @@ function ConnectionBadge() {
       className={`status-badge ${connected ? 'READY' : 'PENDING'}`}
       style={{ padding: '6px 14px' }}
     >
-      {connected ? '● WebSocket Live' : '○ Reconnecting…'}
+      {connected ? 'WebSocket Live' : 'Reconnecting…'}
     </span>
   );
 }

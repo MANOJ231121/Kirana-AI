@@ -6,8 +6,10 @@ import {
   startCall,
   synthesizeSpeech,
   transcribeAudio,
+  updateWebCallOrder,
 } from '../services/api.js';
 import { playBase64Audio, speakBrowser, stopAllAudio } from '../services/audio.js';
+import { CheckIcon, ListIcon, MicIcon, MinusIcon, PlusIcon, SpeakerIcon, StoreIcon, XIcon } from './Icons.jsx';
 
 function playAiAudio(base64, mime, fallbackText) {
   if (base64) {
@@ -27,7 +29,7 @@ function playAiAudio(base64, mime, fallbackText) {
  * Audio safety: single-flight playback (stopAllAudio before every voice),
  * StrictMode-guarded single session start, and all audio killed on hang-up.
  */
-export default function CallShopkeeperModal({ customerName, phone, pickupTime, onClose, onOrderPlaced }) {
+export default function CallShopkeeperModal({ customerName, address, phone, pickupTime, onClose, onOrderPlaced }) {
   const [phase, setPhase] = useState('starting'); // starting | live | verifying | done
   const [callSid, setCallSid] = useState('');
   const [turns, setTurns] = useState([]);
@@ -36,6 +38,7 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [verifyText, setVerifyText] = useState('');
+  const [details, setDetails] = useState({ customerName: customerName || '', address: address || '' });
   const recRef = useRef(null);
   const streamRef = useRef(null);
   const liveRef = useRef(true);
@@ -89,6 +92,11 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
       if (!liveRef.current) return;
       setTurns((t) => [...t, { from: 'ai', text: r.aiResponse }]);
       if (Array.isArray(r.items)) setItems(r.items);
+      // Sync voice-captured name/address into the customer-details section.
+      setDetails((d) => ({
+        customerName: r.nameKnown && r.customerName ? r.customerName : d.customerName,
+        address: r.address ? r.address : d.address,
+      }));
       playAiAudio(r.audioBase64, 'audio/mpeg', r.aiResponse);
     } catch (e) {
       if (liveRef.current) setError(e.message);
@@ -123,7 +131,7 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
         try {
           const d = await transcribeAudio(blob);
           if (d?.transcript) sendTranscript(d.transcript);
-          else setError('No speech detected. Tap 🎤 and speak again.');
+          else setError('No speech detected. Tap the mic and speak again.');
         } catch (e) {
           setError(e.message || 'Speech recognition unavailable on this browser.');
         }
@@ -165,6 +173,28 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
     }
   };
 
+  const fmtQty = (q) => (Number.isInteger(q) ? String(q) : String(Number(q)));
+
+  const updateItem = async (item, action, quantity) => {
+    if (busy || !liveRef.current) return;
+    setBusy(true);
+    setError('');
+    try {
+      const r = await updateWebCallOrder({
+        phoneNumber: phone,
+        itemName: item.name,
+        action,
+        quantity,
+      });
+      if (!liveRef.current) return;
+      if (Array.isArray(r.items)) setItems(r.items);
+    } catch (e) {
+      if (liveRef.current) setError(e.message || 'Could not update the item.');
+    } finally {
+      if (liveRef.current) setBusy(false);
+    }
+  };
+
   const verifyList = async () => {
     if (!items.length) {
       setError('List is empty — speak your items first.');
@@ -184,18 +214,25 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
   };
 
   const confirmOrder = async () => {
-    if (!customerName?.trim()) {
+    const name = details.customerName?.trim() || customerName?.trim() || '';
+    if (!name) {
       setError('Add your name on the storefront first.');
+      return;
+    }
+    const address = details.address?.trim() || '';
+    if (!address) {
+      setError('Tell me your delivery address on the call, or type it below.');
       return;
     }
     setBusy(true);
     setError('');
     try {
       const order = await createOrder({
-        customerName: customerName.trim(),
+        customerName: name,
         customerPhone: phone?.trim() || undefined,
         items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit || 'pc' })),
         pickupTime,
+        address,
       });
       try {
         await endCall({ callSid, phoneNumber: phone });
@@ -223,14 +260,18 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
     <div className="modal-backdrop" onClick={hangUp}>
       <div className="call-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Call shopkeeper">
         <div className="call-header">
-          <span className="call-avatar">🏪</span>
+          <span className="call-avatar">
+            <StoreIcon size={22} />
+          </span>
           <div className="call-id">
             <b>Sharma Kirana Store</b>
             <span className={`call-status ${phase === 'live' ? 'live' : ''}`}>
-              {phase === 'starting' ? 'Connecting…' : phase === 'done' ? 'Order sent ✓' : '● Live call'}
+              {phase === 'starting' ? 'Connecting…' : phase === 'done' ? 'Order sent' : '● Live call'}
             </span>
           </div>
-          <button className="call-hangup" onClick={hangUp} aria-label="Hang up">✕</button>
+          <button className="call-hangup" onClick={hangUp} aria-label="Hang up">
+            <XIcon size={16} />
+          </button>
         </div>
 
         {phase === 'starting' && <p className="empty">Connecting your call…</p>}
@@ -244,27 +285,80 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
           ))}
         </div>
 
+        <section className="call-list call-details">
+          <h3>Customer details</h3>
+          <div className="detail-grid">
+            <label className="detail-field">
+              <span>Name</span>
+              <input
+                value={details.customerName}
+                placeholder="Your name"
+                autoComplete="off"
+                onChange={(e) => setDetails((d) => ({ ...d, customerName: e.target.value }))}
+              />
+            </label>
+            <label className="detail-field">
+              <span>Delivery address</span>
+              <input
+                value={details.address}
+                placeholder="e.g. Shastri Nagar, Gali no. 2"
+                autoComplete="off"
+                onChange={(e) => setDetails((d) => ({ ...d, address: e.target.value }))}
+              />
+            </label>
+          </div>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>
+            Just speak it — “mera naam Rahul hai” and “pata Shastri Nagar” are captured automatically.
+          </p>
+        </section>
+
         <section className="call-list">
-          <h3>🧾 Live grocery list</h3>
+          <h3><ListIcon size={16} /> Live grocery list</h3>
           {items.length === 0 ? (
             <p className="empty">Nothing yet — say e.g. “1 kg Atta and 2 kg Chini”.</p>
           ) : (
             <ul>
               {items.map((i, idx) => (
-                <li key={idx}>
-                  <span>{i.name}</span>
-                  <b>× {i.quantity} {i.unit}</b>
+                <li key={idx} className="call-item">
+                  <span className="call-item-name">{i.name}</span>
+                  <div className="call-item-qty">
+                    <button
+                      className="qty-btn call-qty-btn"
+                      onClick={() => updateItem(i, 'SET_QTY', (i.quantity || 1) - 1)}
+                      disabled={busy || (i.quantity || 1) <= 1}
+                      aria-label={`Decrease ${i.name}`}
+                    >
+                      <MinusIcon size={13} />
+                    </button>
+                    <b className="call-qty-text">{fmtQty(i.quantity)} {i.unit}</b>
+                    <button
+                      className="qty-btn call-qty-btn"
+                      onClick={() => updateItem(i, 'SET_QTY', (i.quantity || 1) + 1)}
+                      disabled={busy}
+                      aria-label={`Increase ${i.name}`}
+                    >
+                      <PlusIcon size={13} />
+                    </button>
+                  </div>
+                  <button
+                    className="call-item-remove"
+                    onClick={() => updateItem(i, 'REMOVE')}
+                    disabled={busy}
+                    aria-label={`Remove ${i.name}`}
+                  >
+                    <XIcon size={14} />
+                  </button>
                 </li>
               ))}
             </ul>
           )}
           <p className="muted" style={{ fontSize: '0.8rem' }}>
-            Corrections work live — say “No no, 2 kg Atta instead”.
+            Use + / − to fix a quantity, tap × to remove an item — or just say “No no, 2 kg Atta instead”.
           </p>
         </section>
 
         {phase === 'verifying' && (
-          <div className="toast-banner">🔊 {verifyText}</div>
+          <div className="toast-banner">{verifyText}</div>
         )}
 
         <form
@@ -282,12 +376,12 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
 
         <div className="call-actions">
           <button className={`mic-btn ${listening ? 'live' : ''}`} onClick={listenOnce} disabled={busy} aria-label="Speak">
-            🎤
+            <MicIcon size={24} />
           </button>
           {phase !== 'done' ? (
             <>
               <button className="action-btn verify" onClick={verifyList} disabled={busy || !items.length}>
-                🔊 Verify my list
+                <SpeakerIcon size={15} /> Verify my list
               </button>
               <button
                 className="btn-primary"
@@ -295,11 +389,11 @@ export default function CallShopkeeperModal({ customerName, phone, pickupTime, o
                 onClick={confirmOrder}
                 disabled={busy || !items.length || phase !== 'verifying'}
               >
-                ✅ Confirm & send
+                <CheckIcon size={16} /> Confirm & send
               </button>
             </>
           ) : (
-            <div className="toast-banner" style={{ flex: 1 }}>🎉 Order sent — track it in your basket!</div>
+            <div className="toast-banner" style={{ flex: 1 }}>Order sent — track it in your basket!</div>
           )}
         </div>
       </div>

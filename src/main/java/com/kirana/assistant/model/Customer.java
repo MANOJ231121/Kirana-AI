@@ -17,6 +17,8 @@ public class Customer {
 
     private String name;
 
+    private String address;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -53,6 +55,14 @@ public class Customer {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public LocalDateTime getCreatedAt() {

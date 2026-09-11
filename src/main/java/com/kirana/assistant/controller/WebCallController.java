@@ -1,7 +1,11 @@
 package com.kirana.assistant.controller;
 
 import com.kirana.assistant.model.CallSession;
+import com.kirana.assistant.model.Customer;
+import com.kirana.assistant.model.Order;
+import com.kirana.assistant.model.OrderItem;
 import com.kirana.assistant.repository.CallSessionRepository;
+import com.kirana.assistant.repository.OrderRepository;
 import com.kirana.assistant.service.AiOrderAgentService;
 import com.kirana.assistant.service.DashboardNotifierService;
 import com.kirana.assistant.service.RimeTtsService;
@@ -30,6 +34,9 @@ public class WebCallController {
     private CallSessionRepository callSessionRepository;
 
     @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
     private DashboardNotifierService dashboardNotifierService;
 
     /**
@@ -42,8 +49,13 @@ public class WebCallController {
 
         log.info("Starting WebCall session {} for customer {}", callSid, phoneNumber);
 
+        // A new call ALWAYS starts fresh: close out any previous active
+        // orders so stale items never leak into the next conversation.
+        aiOrderAgentService.startFreshCall(phoneNumber);
+        Customer customer = aiOrderAgentService.getOrCreateCustomer(phoneNumber);
+        String greeting = aiOrderAgentService.greetingFor(customer);
+
         CallSession session = new CallSession(callSid, phoneNumber);
-        String greeting = "Hello! Welcome to Sharma Kirana Store. What would you like to order today? Your order will be processed and be ready before you reach us!";
         session.addTranscriptEntry("AI", greeting);
         // Single save - a new session MUST NOT be persisted twice or the
         // `callSid` lookup later fails with "returned non unique result".
@@ -54,7 +66,10 @@ public class WebCallController {
 
         String base64Audio = "";
         try {
-            base64Audio = rimeTtsService.synthesizeSpeechBase64Mp3(greeting);
+            // Drive the audio from the TTS-normalized text so quantities and
+            // units are pronounced smoothly ("do kilo aata", not "2 kay-gee").
+            base64Audio = rimeTtsService.synthesizeSpeechBase64Mp3(
+                    aiOrderAgentService.ttsTextFor(greeting));
         } catch (Exception e) {
             log.warn("Failed to generate Rime TTS greeting: {}", e.getMessage());
         }
@@ -94,7 +109,8 @@ public class WebCallController {
 
         String base64Audio = "";
         try {
-            base64Audio = rimeTtsService.synthesizeSpeechBase64Mp3(aiResponse);
+            base64Audio = rimeTtsService.synthesizeSpeechBase64Mp3(
+                    aiOrderAgentService.ttsTextFor(aiResponse));
         } catch (Exception e) {
             log.warn("Failed to generate Rime TTS audio response: {}", e.getMessage());
         }
@@ -113,6 +129,10 @@ public class WebCallController {
                     ? activeOrder.getStatus().name() : null);
             result.put("items", activeOrder.getItems());
             result.put("pickupTime", activeOrder.getPickupTime());
+            result.put("customerName", customer.getName());
+            result.put("nameKnown", aiOrderAgentService.isNameKnown(customer));
+            result.put("address", activeOrder.getAddress());
+            result.put("addressKnown", aiOrderAgentService.addressKnown(activeOrder));
         } catch (Exception e) {
             log.warn("Failed to snapshot call order: {}", e.getMessage());
         }
@@ -140,5 +160,58 @@ public class WebCallController {
 
         dashboardNotifierService.notifyCallUpdate("Web Call ended: " + phoneNumber);
         return ResponseEntity.ok(Map.of("status", "SUCCESS"));
+    }
+
+    /**
+     * Modify a single item of the active call order (REMOVE or SET_QTY).
+     * Called from the +/−/× controls of the live grocery list.
+     */
+    @PostMapping("/order-update")
+    public ResponseEntity<Map<String, Object>> updateOrderItem(@RequestBody Map<String, String> body) {
+        String phoneNumber = body.getOrDefault("phoneNumber", "+919999999999");
+        String itemName = body.get("itemName");
+        String action = body.getOrDefault("action", "SET_QTY");
+        Double quantity = null;
+        if (body.get("quantity") != null && !body.get("quantity").isBlank()) {
+            try {
+                quantity = Double.parseDouble(body.get("quantity"));
+            } catch (NumberFormatException e) {
+                quantity = null;
+            }
+        }
+        if (itemName == null || itemName.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            var customer = aiOrderAgentService.getOrCreateCustomer(phoneNumber);
+            var activeOrder = aiOrderAgentService.getOrCreateActiveOrder(customer);
+            boolean changed = false;
+            if ("REMOVE".equalsIgnoreCase(action)) {
+                changed = activeOrder.getItems().removeIf(i -> i.getName().equalsIgnoreCase(itemName));
+            } else {
+                for (OrderItem item : activeOrder.getItems()) {
+                    if (item.getName().equalsIgnoreCase(itemName)) {
+                        if (quantity != null && quantity > 0) {
+                            item.setQuantity(quantity);
+                            changed = true;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (changed) {
+                activeOrder.setUpdatedAt(java.time.LocalDateTime.now());
+                orderRepository.save(activeOrder);
+                dashboardNotifierService.notifyOrderUpdate(activeOrder, "SPOKEN_UPDATE");
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("items", activeOrder.getItems());
+            result.put("orderId", activeOrder.getId());
+            result.put("orderStatus", activeOrder.getStatus() != null ? activeOrder.getStatus().name() : null);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.warn("Failed to update call order item: {}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }

@@ -57,4 +57,40 @@ class OrderParsingServiceTest {
         assertEquals(1, items.size());
         assertEquals(1.0, items.get(0).getQuantity());
     }
+
+    @Test
+    void devanagariQuantitiesAndUnits() {
+        List<OrderItem> items = parser.parseList("एक किलो आटा और दो किलो चीनी");
+        assertEquals(2, items.size());
+        assertEquals(1.0, one(items, "Atta").getQuantity());
+        assertEquals(2.0, one(items, "Sugar").getQuantity());
+        assertEquals("kg", one(items, "Atta").getUnit());
+        assertEquals("kg", one(items, "Sugar").getUnit());
+    }
+
+    @Test
+    void devanagariDigitsAndHalfKilo() {
+        List<OrderItem> items = parser.parseList("२ किग्रा अंडे");
+        OrderItem eggs = one(items, "Eggs");
+        assertEquals(2.0, eggs.getQuantity());
+        assertEquals("kg", eggs.getUnit());
+    }
+
+    @Test
+    void devanagariMixedSentence() {
+        List<OrderItem> items = parser.parseList("तोड़ दो किलो चावल, तीन मैगी पैकेट");
+        assertEquals(2, items.size());
+        assertEquals(2.0, one(items, "Rice").getQuantity());
+        assertEquals(3.0, one(items, "Maggi").getQuantity());
+    }
+
+    @Test
+    void knownListDropsGarbledSpeech() {
+        // Garbled STT fragments and address words must not survive as items.
+        List<OrderItem> items = parser.parseKnownList(
+                "कज अतत पर एक इनट कज नह नह कल चन करन ह मझ शास्त्री नगर गली नंबर और ek kilo atta");
+        assertEquals(1, items.size());
+        assertEquals("Atta", items.get(0).getName());
+        assertEquals(1.0, items.get(0).getQuantity());
+    }
 }

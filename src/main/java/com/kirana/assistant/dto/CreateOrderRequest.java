@@ -20,6 +20,8 @@ public class CreateOrderRequest {
 
     private String pickupTime;
 
+    private String address;
+
     public String getCustomerName() {
         return customerName;
     }
@@ -50,5 +52,13 @@ public class CreateOrderRequest {
 
     public void setPickupTime(String pickupTime) {
         this.pickupTime = pickupTime;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 }

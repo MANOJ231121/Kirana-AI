@@ -12,13 +12,19 @@ import { useSpeech } from '../hooks/useSpeech.js';
 import { useWakeWord } from '../hooks/useWakeWord.js';
 import { useOrdersSocket } from '../websocket/useOrdersSocket.js';
 import CallShopkeeperModal from '../components/CallShopkeeperModal.jsx';
-
-const EMOJI = {
-  atta: '🌾', rice: '🍚', dal: '🥣', milk: '🥛', ghee: '🧈',
-  sugar: '🍬', salt: '🧂', tea: '🍵', maggi: '🍜', biscuit: '🍪',
-  egg: '🥚', bread: '🍞', oil: '🫗', onion: '🧅', potato: '🥔',
-  tomato: '🍅', shampoo: '🧴', detergent: '🧺',
-};
+import {
+  CartIcon,
+  CheckIcon,
+  MicIcon,
+  MinusIcon,
+  PackageIcon,
+  PhoneIcon,
+  PlusIcon,
+  SearchIcon,
+  SpeakerIcon,
+  StoreIcon,
+  XIcon,
+} from '../components/Icons.jsx';
 
 const PRODUCT_IMAGES = {
   atta: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=400&auto=format&fit=crop&q=80',
@@ -61,14 +67,6 @@ const DEFAULT_MENU = [
   { id: '17', name: 'Shampoo', price: 99, category: 'Personal Care', unit: 'packet', available: true, imageUrl: PRODUCT_IMAGES.shampoo },
   { id: '18', name: 'Detergent', price: 150, category: 'Household', unit: 'packet', available: true, imageUrl: PRODUCT_IMAGES.detergent },
 ];
-
-function emojiFor(name = '') {
-  const n = name.toLowerCase();
-  for (const [k, v] of Object.entries(EMOJI)) {
-    if (n.includes(k)) return v;
-  }
-  return '🛍️';
-}
 
 function imageFor(item) {
   if (item?.imageUrl) return item.imageUrl;
@@ -184,10 +182,11 @@ export default function CustomerPage() {
   const [category, setCategory] = useState('All');
   const [name, setName] = useState('Rahul');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [pickupTime, setPickupTime] = useState('19:30');
   const [basket, setBasket] = useState([]);
   const [messages, setMessages] = useState([
-    { from: 'ai', text: 'Namaste! 🙏 Sharma Kirana Store mein aapka swagat hai. Mic tap karke boliye: "Siri, 1k atta dalna list mai" ya menu se tap kariye!' },
+    { from: 'ai', text: 'Namaste! Sharma Kirana Store mein aapka swagat hai. Mic tap karke boliye: "Siri, 1k atta dalna list mai" ya menu se tap kariye!' },
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -234,7 +233,7 @@ export default function CustomerPage() {
   const playWelcomeGreeting = () => {
     const welcomeMsg = 'Namaste! Sharma Kirana Store mein aapka swagat hai. Aap mic tap karke ya bol kar grocery order kar sakte hain.';
     setHasWelcomed(true);
-    setToast('🔊 Playing Welcome Voice Greeting');
+    setToast('Playing Welcome Voice Greeting');
     speakText(welcomeMsg);
     setTimeout(() => setToast(''), 3000);
   };
@@ -266,7 +265,7 @@ export default function CustomerPage() {
       if (!transcript?.trim() || busy) return;
       setBusy(true);
       setError('');
-      setAssistantState('Samajh raha hoon… 🤔');
+      setAssistantState('Samajh raha hoon…');
       pushMsg('you', transcript);
 
       let processed = false;
@@ -283,7 +282,7 @@ export default function CustomerPage() {
             setBasket([]);
           } else if ((data.items || []).length) {
             setBasket((c) => mergeItems(c, data.items));
-            setToast(`🧺 Basket updated (${data.items.length} item)`);
+            setToast(`Basket updated (${data.items.length} item)`);
             setTimeout(() => setToast(''), 3000);
           }
           if (data.pickupTime) setPickupTime(data.pickupTime);
@@ -305,7 +304,7 @@ export default function CustomerPage() {
             // Confirm order trigger
           } else if (localData.items && localData.items.length > 0) {
             setBasket((c) => mergeItems(c, localData.items));
-            setToast(`🧺 Added ${localData.items.map((i) => i.name).join(', ')} to basket`);
+            setToast(`Added ${localData.items.map((i) => i.name).join(', ')} to basket`);
             setTimeout(() => setToast(''), 3000);
           }
           pushMsg('ai', localData.replyText);
@@ -333,7 +332,7 @@ export default function CustomerPage() {
   });
 
   useEffect(() => {
-    if (awakened) setAssistantState('Haan ji? Sun raha hoon… 👂');
+    if (awakened) setAssistantState('Haan ji? Sun raha hoon…');
   }, [awakened]);
 
   useOrdersSocket({
@@ -362,7 +361,7 @@ export default function CustomerPage() {
     if (!p.available) return;
     setBasket((b) => mergeItems(b, [{ name: p.name, quantity: 1, unit: p.unit || 'pc' }]));
     const msg = `Added 1 ${p.unit || 'pc'} of ${p.name} to basket`;
-    setToast(`🧺 ${msg}`);
+    setToast(`${msg}`);
     speakText(`${p.name} basket mein add ho gaya`);
     setTimeout(() => setToast(''), 2500);
   };
@@ -388,6 +387,7 @@ export default function CustomerPage() {
         customerPhone: phone.trim() || undefined,
         items: basket,
         pickupTime,
+        address: address.trim() || undefined,
       });
       if (order && order.id) {
         newOrdId = order.id;
@@ -399,7 +399,7 @@ export default function CustomerPage() {
 
     setOrderId(newOrdId);
     setOrderStatus(newStatus);
-    const confirmMsg = `Aapka order confirm ho gaya hai! 🎉 Order ID #${newOrdId.slice(-6)}. Pickup time ${pickupTime}. Dhanyavaad!`;
+    const confirmMsg = `Aapka order confirm ho gaya hai! Order ID #${newOrdId.slice(-6)}. Pickup time ${pickupTime}. Dhanyavaad!`;
     pushMsg('ai', confirmMsg);
     speakText(confirmMsg);
     setBusy(false);
@@ -410,7 +410,9 @@ export default function CustomerPage() {
       {/* First Layer Topbar */}
       <header className="topbar">
         <Link to="/" className="brand">
-          <span className="brand-mark">🛒</span>
+          <span className="brand-mark">
+            <StoreIcon size={24} />
+          </span>
           <div>
             <h1>Sharma Kirana Store</h1>
             <small>Voice Assistant Powered by Groq AI</small>
@@ -418,44 +420,49 @@ export default function CustomerPage() {
         </Link>
         <nav className="navlinks">
           <button className="nav-link call-btn" onClick={() => setCallOpen(true)}>
-            📞 Call Shopkeeper
+            <PhoneIcon size={15} /> Call Shopkeeper
           </button>
           <button
             className="nav-link"
             style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700 }}
             onClick={playWelcomeGreeting}
           >
-            🔊 Welcome Voice
+            <SpeakerIcon size={15} /> Welcome Voice
           </button>
-          <Link to="/" className="nav-link">← Home</Link>
-          <Link to="/shopkeeper" className="nav-link primary">Shopkeeper Portal →</Link>
+          <Link to="/" className="nav-link">Home</Link>
+          <Link to="/shopkeeper" className="nav-link primary">Shopkeeper Portal</Link>
         </nav>
       </header>
 
       {/* Hero Banner */}
       <section className="hero">
-        <h2>Namaste! 🙏 Sharma Kirana Store Mein Aapka Swagat Hai.</h2>
-        <p>Browse our catalog below or speak naturally to your AI assistant — say “Siri, 1k atta dalna list mai” or click the mic to add items and place live orders!</p>
+        <h2>Namaste! Sharma Kirana Store Mein Aapka Swagat Hai.</h2>
+        <p>Browse our catalog below or speak naturally to your AI assistant — say "Siri, 1k atta dalna list mai" or click the mic to add items and place live orders!</p>
         <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <span className="wake-hint">🎙️ Wake word: “Siri…” or “Kirana…” — continuous voice listening</span>
+          <span className="wake-hint">
+            <MicIcon size={15} /> Wake word: "Siri…" or "Kirana…" — continuous voice listening
+          </span>
           <button className="call-btn hero-call" onClick={() => setCallOpen(true)}>
-            📞 Call Shopkeeper
+            <PhoneIcon size={15} /> Call Shopkeeper
           </button>
           {!hasWelcomed && (
             <button
               onClick={playWelcomeGreeting}
               style={{
-                background: 'rgba(255, 255, 255, 0.25)',
-                border: '1px solid rgba(255,255,255,0.4)',
-                color: '#fff',
+                background: 'rgba(34, 211, 238, 0.08)',
+                border: '1px solid rgba(34, 211, 238, 0.35)',
+                color: '#a5f3fc',
                 padding: '6px 14px',
                 borderRadius: '999px',
                 fontSize: '0.82rem',
                 fontWeight: 700,
                 cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
               }}
             >
-              🔊 Click to Hear Welcome Audio Greeting
+              <SpeakerIcon size={15} /> Click to Hear Welcome Audio Greeting
             </button>
           )}
         </div>
@@ -474,18 +481,28 @@ export default function CustomerPage() {
             aria-label="Activate Microphone Voice Assistant"
             title="Click to Speak"
           >
-            🎤
+            <MicIcon size={34} />
           </button>
         </div>
 
         <div className="assistant-info">
           <h3>
             Kirana AI Voice Assistant
-            {awakened ? ' — Listening! 👂' : listening ? ' — Recording… 🔴' : ' — Ready ✨'}
+            {awakened ? (
+              <>
+                <span className="live-dot" /> Listening
+              </>
+            ) : listening ? (
+              <>
+                <span className="live-dot" /> Recording…
+              </>
+            ) : (
+              ' — Ready'
+            )}
           </h3>
           <p>{assistantState}</p>
           <span className="assistant-badge">
-            {busy ? 'Thinking… 🤔' : basket.length ? `🧺 ${basket.length} item(s) in basket` : 'Basket is empty'}
+            {busy ? 'THINKING…' : basket.length ? `${basket.length} ITEM(S) IN BASKET` : 'BASKET EMPTY'}
           </span>
         </div>
 
@@ -495,7 +512,7 @@ export default function CustomerPage() {
           title={wakeSupported ? 'Always-on wake word listener' : 'Wake word requires Web Speech API'}
           disabled={!wakeSupported}
         >
-          {wakeSupported ? (wakeOn ? '🟢 Wake Word: ON' : '⚪ Wake Word: OFF') : 'Wake N/A'}
+          {wakeSupported ? (wakeOn ? 'Wake Word: ON' : 'Wake Word: OFF') : 'Wake N/A'}
         </button>
       </section>
 
@@ -507,7 +524,7 @@ export default function CustomerPage() {
           {/* Store Menu Card */}
           <section className="card">
             <div className="card-title">
-              <span>🛍️ Store Catalog & Menu Items</span>
+              <span className="title-icon"><PackageIcon size={18} /> Store Catalog & Menu Items</span>
               <small className="card-subtitle" style={{ margin: 0 }}>Tap item or say "1k atta dalna list mai"</small>
             </div>
             <p className="card-subtitle">Fresh local groceries delivered straight to your pickup counter.</p>
@@ -516,7 +533,7 @@ export default function CustomerPage() {
 
             {/* Search Box */}
             <div className="search-box">
-              <span className="search-icon">🔍</span>
+              <span className="search-icon"><SearchIcon size={17} /></span>
               <input
                 type="text"
                 placeholder="Search items e.g. Atta, Milk, Maggi, Dal..."
@@ -565,7 +582,7 @@ export default function CustomerPage() {
                         className="product-emoji-container"
                         style={{ display: img ? 'none' : 'grid' }}
                       >
-                        {emojiFor(p.name)}
+                        <PackageIcon size={30} />
                       </div>
                     </div>
 
@@ -598,7 +615,9 @@ export default function CustomerPage() {
 
           {/* AI Chat Conversation Card */}
           <section className="card" style={{ marginTop: 20 }}>
-            <h2 className="card-title">💬 AI Assistant Conversation</h2>
+            <h2 className="card-title">
+              <span className="title-icon"><MicIcon size={18} /> AI Assistant Conversation</span>
+            </h2>
             <p className="card-subtitle">Speak or type: "Siri, 1k atta dalna list mai" or "Add 2 packet Amul milk"</p>
 
             <div className="chat-box">
@@ -640,7 +659,9 @@ export default function CustomerPage() {
         {/* Right Column: Sticky Basket */}
         <div className="basket-sticky">
           <section className="card">
-            <h2 className="card-title">🧺 Your Basket</h2>
+            <h2 className="card-title">
+              <span className="title-icon"><CartIcon size={18} /> Your Basket</span>
+            </h2>
             <p className="card-subtitle">Review items, set pickup details, and confirm order.</p>
 
             <div className="form-group">
@@ -662,6 +683,15 @@ export default function CustomerPage() {
             </div>
 
             <div className="form-group">
+              <label>Delivery Address</label>
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="House no, street, area"
+              />
+            </div>
+
+            <div className="form-group">
               <label>Pickup Time</label>
               <input
                 value={pickupTime}
@@ -673,7 +703,7 @@ export default function CustomerPage() {
             {basket.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
                 <p>Basket is currently empty.</p>
-                <small>Tap items in catalog or say: "1k ataa dalna list mai"! 🎙️</small>
+                <small>Tap items in catalog or say: "1k ataa dalna list mai"</small>
               </div>
             ) : (
               <>
@@ -681,7 +711,7 @@ export default function CustomerPage() {
                   {basket.map((i, idx) => (
                     <li key={idx} className="basket-item">
                       <div className="basket-item-info">
-                        <span className="basket-item-title">{emojiFor(i.name)} {i.name}</span>
+                        <span className="basket-item-title">{i.name}</span>
                         <span className="basket-item-unit">₹{priceOf(i.name)} × {i.quantity} {i.unit}</span>
                       </div>
                       <div className="basket-qty-controls">
@@ -692,8 +722,9 @@ export default function CustomerPage() {
                               c.map((x, j) => (j === idx ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x)),
                             )
                           }
+                          aria-label="Decrease quantity"
                         >
-                          −
+                          <MinusIcon size={14} />
                         </button>
                         <span style={{ fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>
                           {i.quantity}
@@ -703,15 +734,17 @@ export default function CustomerPage() {
                           onClick={() =>
                             setBasket((c) => c.map((x, j) => (j === idx ? { ...x, quantity: x.quantity + 1 } : x)))
                           }
+                          aria-label="Increase quantity"
                         >
-                          +
+                          <PlusIcon size={14} />
                         </button>
                         <button
                           className="qty-btn danger"
                           onClick={() => setBasket((c) => c.filter((_, j) => j !== idx))}
                           title="Remove item"
+                          aria-label="Remove item"
                         >
-                          ✕
+                          <XIcon size={14} />
                         </button>
                       </div>
                     </li>
@@ -733,7 +766,7 @@ export default function CustomerPage() {
               disabled={busy || !basket.length}
               style={{ marginTop: 12 }}
             >
-              ✅ Confirm & Place Order
+              <CheckIcon size={17} /> Confirm & Place Order
             </button>
 
             {orderId && (
@@ -753,13 +786,14 @@ export default function CustomerPage() {
       {callOpen && (
         <CallShopkeeperModal
           customerName={name}
+          address={address}
           phone={phone}
           pickupTime={pickupTime}
           onClose={() => setCallOpen(false)}
           onOrderPlaced={(order) => {
             setOrderId(order.id);
             setOrderStatus(order.status);
-            setToast(`🎉 Call order placed! ID #${order.id.slice(-6)} — live on shopkeeper portal.`);
+            setToast(`Call order placed! ID #${order.id.slice(-6)} — live on shopkeeper portal.`);
             setTimeout(() => setToast(''), 5000);
             setCallOpen(false);
           }}
