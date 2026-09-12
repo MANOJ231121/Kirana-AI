@@ -28,8 +28,9 @@ if (Test-NetConnection -ComputerName localhost -Port 27017 -InformationLevel Qui
 Write-Host "`n[1/2] Starting Spring Boot backend on :8080 ..." -ForegroundColor Cyan
 # Force IPv4 networking for the JVM - avoids DNS/A-query hangs on this PC.
 $env:JAVA_TOOL_OPTIONS = '-Djava.net.preferIPv4Stack=true -Djava.net.preferIPv4Addresses=true'
+$backendDir = Join-Path $PSScriptRoot "backend"
 $backendLog = Join-Path $PSScriptRoot "backend.log"
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "cd /d `"$PSScriptRoot`" && mvn spring-boot:run > `"$backendLog`" 2>&1" -WindowStyle Minimized
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "cd /d `"$backendDir`" && mvn spring-boot:run > `"$backendLog`" 2>&1" -WindowStyle Minimized
 Write-Host "Backend launching in background (log: $backendLog) ..."
 
 # 3. Start frontend (Vite) in a new window

@@ -21,7 +21,6 @@ class KiranaAssistantApplicationContextTest {
         registry.add("GROQ_API_KEY", () -> "dummy-groq");
         registry.add("RIME_API_KEY", () -> "dummy-rime");
         registry.add("RIME_SPEAKER", () -> "nadi");
-        registry.add("DEEPGRAM_API_KEY", () -> "dummy-deepgram");
         registry.add("PUBLIC_BASE_URL", () -> "https://example.ngrok.io");
         registry.add("SEED_DATA", () -> "false");
     }

@@ -63,7 +63,7 @@ public class MockAiService implements AIService {
         }
 
         // Remove hints
-        if (lower.contains("hatao") || lower.contains("remove") || lower.contains("nikal")) {
+        if (lower.contains("hatao") || lower.contains("hata") || lower.contains("remove") || lower.contains("nikal") || lower.contains("delete")) {
             List<OrderItem> items = parsingService.parseList(t);
             r.setIntent(Intent.REMOVE_ITEM);
             r.setItems(items);

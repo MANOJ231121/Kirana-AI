@@ -90,7 +90,7 @@ function mergeItems(cart, incoming) {
   return next;
 }
 
-// Local smart parser for voice commands like "1k ataa dalna list mai", "siri 2 packet milk", "add maggi"
+// Local smart parser for voice commands like "1k ataa dalna list mai", "siri 2 packet milk", "add maggi", "nhi nhi atta hata do"
 function parseLocalVoiceCommand(text = '') {
   const lower = text.toLowerCase().trim();
   const result = { intent: 'ADD_ITEM', items: [], replyText: '' };
@@ -99,20 +99,6 @@ function parseLocalVoiceCommand(text = '') {
   const cleanText = lower.replace(/^(hey siri|siri|kirana|hey kirana|alexa)[,\s:-]*/i, '').trim();
 
   if (!cleanText) return null;
-
-  // Check confirm intent
-  if (cleanText.match(/\b(confirm|order confirm|kar do|haan|ok|theek hai)\b/)) {
-    result.intent = 'CONFIRM_ORDER';
-    result.replyText = 'Order confirm ho gaya hai! Shopkeeper ko notification bhej diya hai. Dhanyavaad!';
-    return result;
-  }
-
-  // Check cancel intent
-  if (cleanText.match(/\b(cancel|mat karo|hata do|rehne do)\b/)) {
-    result.intent = 'CANCEL_ORDER';
-    result.replyText = 'Aapka cart khaali kar diya gaya hai.';
-    return result;
-  }
 
   // Item match dictionary
   const itemsDict = [
@@ -138,15 +124,12 @@ function parseLocalVoiceCommand(text = '') {
 
   // Match items in utterance
   const matched = [];
-
   for (const itemObj of itemsDict) {
     for (const kw of itemObj.keywords) {
       if (cleanText.includes(kw)) {
-        // Extract quantity: e.g. "1k", "1 kg", "2 packet", "500g", "3"
         let qty = 1;
         let unit = itemObj.unit;
 
-        // Match patterns like "1k", "2k", "1kg", "2.5kg", "1 kg", "2 packet"
         const qtyMatch = cleanText.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(k|kg|kilo|litre|l|packet|pkt|gm|g)?\\s*${kw}`));
         if (qtyMatch) {
           qty = parseFloat(qtyMatch[1]);
@@ -165,6 +148,31 @@ function parseLocalVoiceCommand(text = '') {
     }
   }
 
+  // 1. Check remove item intent FIRST if removal phrase present AND item was matched
+  const isRemoveAction = cleanText.match(/\b(hata|hatao|hata do|hata de|nikal|nikalo|nikal do|remove|delete|mat rakho)\b/);
+  if (isRemoveAction && matched.length > 0) {
+    result.intent = 'REMOVE_ITEM';
+    result.items = matched;
+    const names = matched.map((i) => i.name).join(', ');
+    result.replyText = `${names} basket se hata diya hai. Aur kuch?`;
+    return result;
+  }
+
+  // 2. Check cancel/clear cart intent (when asking to cancel whole order / clear cart)
+  if (cleanText.match(/\b(cancel|cancel order|clear cart|cart khali|rehne do|sab hatao)\b/)) {
+    result.intent = 'CANCEL_ORDER';
+    result.replyText = 'Aapka cart khaali kar diya gaya hai.';
+    return result;
+  }
+
+  // 3. Check confirm intent (explicit order confirmation)
+  if (cleanText.match(/\b(confirm|confirm order|order confirm|order pakka|order final)\b/)) {
+    result.intent = 'CONFIRM_ORDER';
+    result.replyText = 'Order confirm ho gaya hai! Shopkeeper ko notification bhej diya hai. Dhanyavaad!';
+    return result;
+  }
+
+  // 4. Add items intent
   if (matched.length > 0) {
     result.items = matched;
     const summary = matched.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join(' aur ');
@@ -184,13 +192,40 @@ export default function CustomerPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [pickupTime, setPickupTime] = useState('19:30');
-  const [basket, setBasket] = useState([]);
+  const [basket, setBasket] = useState(() => {
+    try {
+      const saved = localStorage.getItem('kirana_basket');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('kirana_basket', JSON.stringify(basket));
+    } catch { /* noop */ }
+  }, [basket]);
+
   const [messages, setMessages] = useState([
     { from: 'ai', text: 'Namaste! Sharma Kirana Store mein aapka swagat hai. Mic tap karke boliye: "Siri, 1k atta dalna list mai" ya menu se tap kariye!' },
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [orderId, setOrderId] = useState('');
+  const [orderId, setOrderId] = useState(() => {
+    try {
+      return localStorage.getItem('kirana_order_id') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (orderId) localStorage.setItem('kirana_order_id', orderId);
+      else localStorage.removeItem('kirana_order_id');
+    } catch { /* noop */ }
+  }, [orderId]);
   const [orderStatus, setOrderStatus] = useState('');
   const [toast, setToast] = useState('');
   const [wakeOn, setWakeOn] = useState(false);
@@ -273,21 +308,30 @@ export default function CustomerPage() {
       // 1. Attempt Groq API processing first
       try {
         const data = await sendConversation({ transcript, currentItems: basket });
-        if (data && data.replyText && data.replyText !== 'Theek hai.') {
+        if (data && (data.replyText || data.intent)) {
           if (data.intent === 'REMOVE_ITEM') {
             setBasket((c) =>
               c.filter((i) => !(data.items || []).some((r) => r.name.toLowerCase() === i.name.toLowerCase())),
             );
+            setToast('Item removed from basket');
+            setTimeout(() => setToast(''), 3000);
           } else if (data.intent === 'CANCEL_ORDER') {
             setBasket([]);
+            try { localStorage.removeItem('kirana_basket'); } catch { /* noop */ }
+            setToast('Basket cleared');
+            setTimeout(() => setToast(''), 3000);
+          } else if (data.intent === 'CONFIRM_ORDER') {
+            confirmOrder();
           } else if ((data.items || []).length) {
             setBasket((c) => mergeItems(c, data.items));
             setToast(`Basket updated (${data.items.length} item)`);
             setTimeout(() => setToast(''), 3000);
           }
           if (data.pickupTime) setPickupTime(data.pickupTime);
-          pushMsg('ai', data.replyText);
-          speakText(data.replyText);
+          if (data.replyText) {
+            pushMsg('ai', data.replyText);
+            speakText(data.replyText);
+          }
           processed = true;
         }
       } catch (e) {
@@ -298,17 +342,28 @@ export default function CustomerPage() {
       if (!processed) {
         const localData = parseLocalVoiceCommand(transcript);
         if (localData) {
-          if (localData.intent === 'CANCEL_ORDER') {
+          if (localData.intent === 'REMOVE_ITEM') {
+            setBasket((c) =>
+              c.filter((i) => !(localData.items || []).some((r) => r.name.toLowerCase() === i.name.toLowerCase())),
+            );
+            setToast(`Removed ${localData.items.map((i) => i.name).join(', ')} from basket`);
+            setTimeout(() => setToast(''), 3000);
+          } else if (localData.intent === 'CANCEL_ORDER') {
             setBasket([]);
+            try { localStorage.removeItem('kirana_basket'); } catch { /* noop */ }
+            setToast('Basket cleared');
+            setTimeout(() => setToast(''), 3000);
           } else if (localData.intent === 'CONFIRM_ORDER') {
-            // Confirm order trigger
+            confirmOrder();
           } else if (localData.items && localData.items.length > 0) {
             setBasket((c) => mergeItems(c, localData.items));
             setToast(`Added ${localData.items.map((i) => i.name).join(', ')} to basket`);
             setTimeout(() => setToast(''), 3000);
           }
-          pushMsg('ai', localData.replyText);
-          speakText(localData.replyText);
+          if (localData.replyText) {
+            pushMsg('ai', localData.replyText);
+            speakText(localData.replyText);
+          }
           processed = true;
         }
       }
@@ -366,12 +421,13 @@ export default function CustomerPage() {
     setTimeout(() => setToast(''), 2500);
   };
 
-  const confirmOrder = async () => {
+  const confirmOrder = async (overrideItems = null) => {
     if (!name.trim()) {
       setError('Apna naam likhiye.');
       return;
     }
-    if (!basket.length) {
+    const targetItems = overrideItems && overrideItems.length ? overrideItems : basket;
+    if (!targetItems.length) {
       setError('Basket khaali hai — menu se add kariye ya boliye.');
       return;
     }
@@ -385,7 +441,7 @@ export default function CustomerPage() {
       const order = await createOrder({
         customerName: name.trim(),
         customerPhone: phone.trim() || undefined,
-        items: basket,
+        items: targetItems,
         pickupTime,
         address: address.trim() || undefined,
       });
@@ -399,6 +455,8 @@ export default function CustomerPage() {
 
     setOrderId(newOrdId);
     setOrderStatus(newStatus);
+    setBasket([]);
+    try { localStorage.removeItem('kirana_basket'); } catch { /* noop */ }
     const confirmMsg = `Aapka order confirm ho gaya hai! Order ID #${newOrdId.slice(-6)}. Pickup time ${pickupTime}. Dhanyavaad!`;
     pushMsg('ai', confirmMsg);
     speakText(confirmMsg);

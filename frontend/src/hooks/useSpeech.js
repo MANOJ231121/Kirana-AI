@@ -28,7 +28,7 @@ export function useSpeech({ onTranscript } = {}) {
       if (!mounted) return;
       const p = s?.stt?.provider;
       const avail = s?.stt?.available;
-      const real = p && (p === 'groq-whisper' || p === 'deepgram');
+      const real = p && p === 'groq-whisper';
       setBackendSttReady(Boolean(real && avail !== false));
     });
     return () => {

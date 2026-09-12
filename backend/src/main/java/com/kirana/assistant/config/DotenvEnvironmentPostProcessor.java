@@ -66,6 +66,10 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor 
         List<File> candidates = new java.util.ArrayList<>(List.of(
                 new File(".env"),
                 new File(userDir, ".env"),
+                new File("backend/.env"),
+                new File(userDir, "backend/.env"),
+                new File("../.env"),
+                new File(userDir, "../.env"),
                 new File("target/classes/.env")
         ));
         if (userDir != null && !userDir.isBlank() && userDir.endsWith("target/classes")) {

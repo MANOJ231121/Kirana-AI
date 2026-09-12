@@ -3,7 +3,6 @@ package com.kirana.assistant.controller;
 import com.kirana.assistant.dto.ConversationMessageRequest;
 import com.kirana.assistant.dto.ConversationMessageResponse;
 import com.kirana.assistant.service.ConversationService;
-import com.kirana.assistant.service.stt.DeepgramSpeechToTextService;
 import com.kirana.assistant.service.stt.GroqSpeechToTextService;
 import com.kirana.assistant.service.stt.MockSpeechToTextService;
 import com.kirana.assistant.service.stt.SpeechToTextService;
@@ -41,20 +40,17 @@ public class ConversationController {
 
     private final ConversationService conversationService;
     private final GroqSpeechToTextService groqStt;
-    private final DeepgramSpeechToTextService deepgram;
     private final MockSpeechToTextService mockStt;
     private final RimeTextToSpeechService rime;
     private final MockTextToSpeechService mockTts;
 
     public ConversationController(ConversationService conversationService,
                                   GroqSpeechToTextService groqStt,
-                                  DeepgramSpeechToTextService deepgram,
                                   MockSpeechToTextService mockStt,
                                   RimeTextToSpeechService rime,
                                   MockTextToSpeechService mockTts) {
         this.conversationService = conversationService;
         this.groqStt = groqStt;
-        this.deepgram = deepgram;
         this.mockStt = mockStt;
         this.rime = rime;
         this.mockTts = mockTts;
@@ -62,12 +58,10 @@ public class ConversationController {
 
     private SpeechToTextService getActiveSttService() {
         if (groqStt.isAvailable()) return groqStt;
-        if (deepgram.isAvailable()) return deepgram;
         return mockStt;
     }
 
     private SpeechToTextService getNextSttService(SpeechToTextService primary) {
-        if (primary == groqStt && deepgram.isAvailable()) return deepgram;
         return mockStt;
     }
 

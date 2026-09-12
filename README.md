@@ -68,7 +68,7 @@ Shopkeeper → PATCH /api/orders/{id}/status → MongoDB → WS event → Custom
 | Frontend | React 18, Vite 5, react-router, SockJS + STOMP  |
 | Backend  | Java 17+, Spring Boot 3.2.5, Web, Validation, WebSocket, Data MongoDB, WebFlux (provider calls) |
 | DB       | MongoDB 7 (docker-compose)                      |
-| STT      | `SpeechToTextService` → `DeepgramSpeechToTextService` / `MockSpeechToTextService` |
+| STT      | `SpeechToTextService` → `GroqSpeechToTextService` (Whisper) / `MockSpeechToTextService` / Web Speech API |
 | LLM      | `AIService` → `GroqAiService` / `MockAiService` |
 | TTS      | `TextToSpeechService` → `RimeTextToSpeechService` / `MockTextToSpeechService` |
 
@@ -79,7 +79,12 @@ receives transcripts, replies, and base64 audio.
 
 ```
 .
-├── frontend/                    # Vite React app (NEW — spec build)
+├── backend/                     # Java Spring Boot Backend
+│   ├── src/                     # Source code & resources
+│   ├── pom.xml                  # Maven configuration
+│   ├── .env                     # Backend environment configuration
+│   └── .env.example
+├── frontend/                    # Vite React app
 │   ├── src/
 │   │   ├── pages/               # CustomerPage, ShopkeeperPage, Home
 │   │   ├── components/          # (reserved)
@@ -89,21 +94,11 @@ receives transcripts, replies, and base64 audio.
 │   │   ├── App.jsx main.jsx styles.css
 │   ├── package.json vite.config.js index.html
 │   └── .env.example
-├── src/main/java/com/kirana/assistant/
-│   ├── controller/  # OrderController (spec API), ConversationController, WebCallController (legacy), HealthController
-│   ├── service/     # OrderService, ConversationService, DashboardNotifierService, AiOrderAgentService (legacy), Groq/Rime/Whisper/Parsing/DataSeeder
-│   ├── service/ai/  # AIService, GroqAiService, MockAiService, Intent, AiOrderParseResult
-│   ├── service/stt/ # SpeechToTextService, DeepgramSpeechToTextService, MockSpeechToTextService
-│   ├── service/tts/ # TextToSpeechService, RimeTextToSpeechService, MockTextToSpeechService
-│   ├── model/       # Order (spec fields), OrderItem, OrderStatus, Customer, …
-│   ├── dto/         # CreateOrderRequest, OrderItemRequest, UpdateOrderStatusRequest, OrderResponse, Conversation*
-│   ├── repository/  # OrderRepository, …
-│   ├── config/      # WebSocketConfig (/ws-dashboard), CorsConfig
-│   └── exception/   # GlobalExceptionHandler + {timestamp,status,message,path}
-├── src/main/resources/static/   # legacy dashboard.html / call.html (kept)
-├── " Kirana Frontend"/          # legacy static mock (kept, untouched)
 ├── docker-compose.yml           # MongoDB
-├── .env.example  frontend/.env.example
+├── start-all.ps1                # Start full stack script
+├── stop-all.ps1                 # Stop processes script
+├── run.ps1                      # Backend launch script
+├── load-env.ps1                 # Environment loader script
 └── README.md
 ```
 
@@ -112,19 +107,19 @@ receives transcripts, replies, and base64 audio.
 - Java 17+ (`java -version`), Maven (`mvn -version`)
 - Node 18+ (`node --version`), npm
 - MongoDB — easiest via Docker: `docker compose up -d`
-- Optional AI keys (app works without them via mocks): `DEEPGRAM_API_KEY`,
-  `GROQ_API_KEY` (or `LLM_API_KEY`), `RIME_API_KEY`
+- Optional AI keys (app works without them via mocks): `GROQ_API_KEY`, `RIME_API_KEY`
 
 ## 6. Environment variables
 
-Backend (`.env`, see `.env.example`):
+Backend (`backend/.env`, see `backend/.env.example`):
 
 ```
 MONGODB_URI=mongodb://localhost:27017/kirana_store
 SERVER_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-DEEPGRAM_API_KEY=
 GROQ_API_KEY=        # or LLM_API_KEY=
+GROQ_LLM_MODEL=llama-3.3-70b-versatile
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo
 RIME_API_KEY=
 RIME_SPEAKER=nadi
 SEED_DATA=true
@@ -151,6 +146,7 @@ Or run a local `mongod` with dbpath of your choice.
 ## 8. Backend setup
 
 ```bash
+cd backend
 mvn clean compile
 mvn test -Dtest='OrderServiceTest,ConversationServiceTest'
 ```
@@ -167,7 +163,7 @@ npm run dev
 
 ```bash
 docker compose up -d          # MongoDB
-mvn spring-boot:run           # backend :8080 (or . .\load-env.ps1 first on Windows)
+cd backend; mvn spring-boot:run # backend :8080
 cd frontend; npm run dev      # frontend :5173
 ```
 
@@ -232,9 +228,9 @@ Valid flow: `PENDING→ACCEPTED→PREPARING→READY→COMPLETED`,
 ## 13. AI/voice architecture
 
 ```
-Browser mic (MediaRecorder 8s clips, or push-to-talk 🎤)
-  → POST /api/stt/transcribe → Deepgram (nova-3, language=hi) or mock ""
-  → transcript → POST /api/conversation/message → Groq (json_object) or MockAiService
+Browser mic (MediaRecorder 8s clips, or Web Speech API)
+  → POST /api/stt/transcribe → Groq Whisper (large-v3-turbo) or browser WebSpeech / mock
+  → transcript → POST /api/conversation/message → Groq LLM (json_object) or MockAiService
   → validated {intent, items, pickupTime, needsClarification, …}
   → React basket → POST /api/orders → MongoDB → WS → shopkeeper
 LLM reply text → POST /api/tts/synthesize → Rime MP3 or mock ""
@@ -266,7 +262,25 @@ Ambiguous input (`2 milk dena`) returns `needsClarification: true` with
 | `Invalid status transition` (400) | Follow PENDING→ACCEPTED→PREPARING→READY→COMPLETED |
 | Shopkeeper sees nothing live | Open pages via `http://localhost:5173` (not `file://`); check WS badge; API URL in `frontend/.env` |
 | Mic does nothing | Allow mic permission; use localhost/HTTPS; typed input always works |
-| STT returns empty | No `DEEPGRAM_API_KEY` → mock path; browser Web Speech fallback engages automatically |
 | AI replies generic | No `GROQ_API_KEY` → deterministic mock; add key + restart for LLM |
 | No TTS audio | No `RIME_API_KEY` → reply shown as text + browser speechSynthesis |
 | Tests fail on new JDK | `OrderServiceTest`/`ConversationServiceTest` are Mockito-free and Mongo-free; run `mvn clean test -Dtest='OrderServiceTest,ConversationServiceTest'` |
+
+## 15. Future Architecture & Extensibility
+
+This system is built using a clean interface-driven architecture (`SpeechToTextService`, `AIService`, `TextToSpeechService`). If you wish to extend the platform in the future, follow these guides:
+
+### Adding Deepgram Speech-To-Text
+1. Create a class implementing `SpeechToTextService` (e.g. `DeepgramSpeechToTextService.java`).
+2. Add `@Value("${DEEPGRAM_API_KEY:}")` property to read from `backend/.env`.
+3. Wire the implementation in `ConversationController.java`:
+   ```java
+   if (groqStt.isAvailable()) return groqStt;
+   if (deepgramStt.isAvailable()) return deepgramStt;
+   return mockStt;
+   ```
+
+### Adding Twilio Telephony Support
+1. Create a dedicated controller `/api/web-call/stream` handling Twilio Media Streams over WebSocket.
+2. Ingest mu-law 8kHz audio chunks into a streaming STT pipeline (`GroqWhisperService` or `DeepgramSpeechToTextService`).
+3. Return synthesized Rime audio chunks back through Twilio WebSocket.
